@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.clients.langfuse.client import flush_langfuse
 from src.services.scenario.service import ScenarioService
+from src.settings import settings
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -37,6 +38,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     export.add_argument("--trace-id", required=True, help="ID hexadecimal do trace.")
     export.add_argument("--output", type=Path, help="Arquivo JSON; sem ele, imprime no stdout.")
+
+    serve = commands.add_parser("serve", help="Inicia a API HTTP com Swagger em /docs.")
+    serve.add_argument("--host", default=settings.API_HOST, help="Interface de rede da API.")
+    serve.add_argument("--port", type=int, default=settings.API_PORT, help="Porta da API.")
+    serve.add_argument(
+        "--reload",
+        action=argparse.BooleanOptionalAction,
+        default=settings.API_RELOAD,
+        help="Recarrega a API ao alterar arquivos (apenas desenvolvimento).",
+    )
     return parser
 
 
@@ -82,6 +93,18 @@ def _export_trace(args: argparse.Namespace) -> int:
     return 0
 
 
+def _serve(args: argparse.Namespace) -> int:
+    import uvicorn  # noqa: PLC0415
+
+    uvicorn.run(
+        "src.api.app:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
+    return 0
+
+
 def main() -> int:
     args = _parser().parse_args()
     if args.command == "sync-prompts":
@@ -90,6 +113,8 @@ def main() -> int:
         return sync_prompts()
     if args.command == "export-trace":
         return _export_trace(args)
+    if args.command == "serve":
+        return _serve(args)
     try:
         return asyncio.run(_run(args))
     finally:

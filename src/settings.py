@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     PROMPT_CACHE_TTL_SECONDS: int = 60
     PROMPT_FETCH_TIMEOUT_SECONDS: int = 3
 
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 8000
+    API_RELOAD: bool = False
+    API_DATABASE_PATH: Path = ROOT_DIR / "data" / "scenario-emulator.db"
+    API_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+
     @field_validator("LANGFUSE_PROMPT_LABEL", "LANGFUSE_SYNC_LABEL")
     @classmethod
     def reject_latest_label(cls, value: str) -> str:
@@ -55,6 +61,10 @@ class Settings(BaseSettings):
             and self.LANGFUSE_SECRET_KEY
             and self.LANGFUSE_BASE_URL
         )
+
+    @property
+    def api_cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.API_CORS_ORIGINS.split(",") if origin.strip()]
 
 
 settings = Settings()

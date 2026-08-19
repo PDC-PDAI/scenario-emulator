@@ -221,3 +221,6 @@ __marimo__/
 
 # Artefatos locais podem conter casos adversariais e dados de experimento.
 outputs/
+
+# Estado local da API (questionários, respostas e avaliações).
+data/
