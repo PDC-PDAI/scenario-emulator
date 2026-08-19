@@ -1,7 +1,47 @@
 [project]
 name = "scenario-emulator"
 version = "0.1.0"
-description = "Add your description here"
+description = "Emulador da Frente A para AgentDebug-RH e RecruitSecBench"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "agno>=2.6.5,<3",
+    "langdetect>=1.0.9",
+    "langfuse>=4.14.0,<5",
+    "ollama>=0.6.2",
+    "openai>=1.0.0",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "python-dotenv>=1.0",
+    "structlog>=24.4",
+]
+
+[project.scripts]
+scenario-emulator = "src.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.9",
+]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+exclude = [".git", ".venv", ".references"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "PL", "W"]
+ignore = ["E501", "PLR0913"]
