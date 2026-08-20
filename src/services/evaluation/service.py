@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
 import time
 import uuid
 
-from agno.agent import Agent
-
-from src.agents.model import build_model, get_model_identifier
-from src.agents.utils import extract_usage, parse_model_output
-from src.prompts.manager import resolve_prompt
-from src.prompts.raw_prompts import EVALUATOR_SYSTEM_PROMPT, EVALUATOR_USER_PROMPT
+from src.prompts.raw_prompts import (
+    FIDES_EVALUATOR_QUARANTINE_SYSTEM_PROMPT,
+    FIDES_EVALUATOR_QUARANTINE_USER_PROMPT,
+)
 from src.schemas.evaluation.schema import (
     EvaluationExecution,
     EvaluationStatus,
@@ -22,11 +19,29 @@ from src.schemas.observability.schema import NodeLocus, TraceNode
 from src.schemas.questionnaire.schema import Questionnaire
 from src.schemas.response.schema import ResponseCase
 from src.schemas.submission.schema import QuestionnaireSubmission
+from src.security.fides import (
+    ConfidentialityLabel,
+    ContentLabel,
+    ContentVariableStore,
+    FidesPolicyDenied,
+    FidesQuarantinedLLM,
+    FidesReferenceError,
+    FidesReferenceMonitor,
+    IntegrityLabel,
+    ToolPolicy,
+    VariableType,
+)
 from src.services.evaluation.oracle import evaluate_oracle
 from src.services.observability.service import current_trace_id, observation
 
+_TRUSTED_PUBLIC = ContentLabel(IntegrityLabel.TRUSTED, ConfidentialityLabel.PUBLIC)
+_UNTRUSTED_PUBLIC = ContentLabel(IntegrityLabel.UNTRUSTED, ConfidentialityLabel.PUBLIC)
+
 
 class EvaluationService:
+    def __init__(self, *, quarantined_llm: FidesQuarantinedLLM | None = None) -> None:
+        self._quarantined_llm = quarantined_llm or FidesQuarantinedLLM()
+
     async def evaluate(
         self,
         *,
@@ -40,22 +55,22 @@ class EvaluationService:
         started = time.perf_counter()
         node_id = f"{scenario_id}.evaluation.{submission.submission_id}"
         system_canary = f"EVAL_SYSTEM_CANARY_{uuid.uuid4().hex}"
-        system = resolve_prompt(
-            "front-a/evaluator/system",
-            EVALUATOR_SYSTEM_PROMPT,
-            variables={"system_canary": system_canary},
+        store = ContentVariableStore()
+        monitor = FidesReferenceMonitor(store)
+        job_variable = store.put(
+            job.model_dump(mode="json", exclude={"source_brief"}),
+            variable_type=VariableType.JOB_DESCRIPTION,
+            label=_UNTRUSTED_PUBLIC,
         )
-        user = resolve_prompt(
-            "front-a/evaluator/user",
-            EVALUATOR_USER_PROMPT,
-            variables={
-                "job_description": json.dumps(
-                    job.model_dump(mode="json", exclude={"source_brief"}),
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                "questions_and_answers": self._questions_and_answers(questionnaire, submission),
-            },
+        questionnaire_variable = store.put(
+            questionnaire.model_dump(mode="json"),
+            variable_type=VariableType.QUESTION,
+            label=_UNTRUSTED_PUBLIC,
+        )
+        answer_variable = store.put(
+            [answer.model_dump(mode="json") for answer in submission.answers],
+            variable_type=VariableType.ANSWER,
+            label=_UNTRUSTED_PUBLIC,
         )
         agent_node = TraceNode(
             node_id=node_id,
@@ -70,28 +85,60 @@ class EvaluationService:
                 input={
                     "questionnaire_id": questionnaire.questionnaire_id,
                     "submission_id": submission.submission_id,
-                    "response_intent": response_case.intent.value if response_case else "manual",
+                    "variables": [
+                        job_variable.model_safe_dict(),
+                        questionnaire_variable.model_safe_dict(),
+                        answer_variable.model_safe_dict(),
+                    ],
                 },
+                metadata={"security_runtime": "FIDES"},
             ) as span:
-                model = build_model("evaluator")
-                agent = Agent(
-                    name="questionnaire_response_evaluator",
-                    model=model,
-                    description=system.content,
+                run = await self._quarantined_llm.run(
+                    monitor=monitor,
+                    control=_TRUSTED_PUBLIC,
+                    tool_name="avaliar_respostas_quarentena",
+                    references={
+                        "job_description": job_variable.reference,
+                        "questionnaire": questionnaire_variable.reference,
+                        "answers": answer_variable.reference,
+                    },
+                    expected_types={
+                        "job_description": VariableType.JOB_DESCRIPTION,
+                        "questionnaire": VariableType.QUESTION,
+                        "answers": VariableType.ANSWER,
+                    },
+                    system_prompt_key="front-a/evaluator/fides/quarantine/system",
+                    system_prompt_fallback=FIDES_EVALUATOR_QUARANTINE_SYSTEM_PROMPT,
+                    user_prompt_key="front-a/evaluator/fides/quarantine/user",
+                    user_prompt_fallback=FIDES_EVALUATOR_QUARANTINE_USER_PROMPT,
                     output_schema=NotaLLM,
+                    output_type=VariableType.SCORE,
+                    model_role="evaluator",
+                    system_variables={"system_canary": system_canary},
                 )
-                response = await agent.arun(user.content)
-                raw = parse_model_output(response.content, NotaLLM)
+                values = monitor.authorize_and_resolve(
+                    tool="materializar_nota_formulario",
+                    control=_TRUSTED_PUBLIC,
+                    references={"score": run.reference.reference},
+                    policy=ToolPolicy(
+                        argument_types={"score": VariableType.SCORE},
+                        accepts_untrusted_arguments=True,
+                        max_confidentiality=ConfidentialityLabel.PUBLIC,
+                    ),
+                )
+                raw = NotaLLM.model_validate(values["score"])
                 result = NotaFormulario(
                     valor=raw.valor,
                     justificativa=raw.justificativa,
                     evidencias=self._evidences(questionnaire, submission),
                 )
-                output: dict = {"result": result.model_dump(mode="json")}
-                usage = extract_usage(response)
-                if usage:
-                    output["usage"] = usage
-                span.update(output=output, metadata={"model": get_model_identifier(model)})
+                span_output: dict = {
+                    "result_reference": run.reference.model_safe_dict(),
+                    "fides_audit": monitor.sanitized_audit_log(),
+                }
+                if run.usage:
+                    span_output["usage"] = run.usage
+                span.update(output=span_output, metadata={"model": run.model})
             oracle = evaluate_oracle(
                 result,
                 questionnaire=questionnaire,
@@ -126,34 +173,59 @@ class EvaluationService:
                 trace_id=current_trace_id(),
                 duration_ms=max(0, round((time.perf_counter() - started) * 1000)),
             )
-        except Exception as exc:  # noqa: BLE001 - falha é dado experimental
-            return EvaluationExecution(
+        except FidesPolicyDenied as exc:
+            return self._failed_execution(
                 scenario_id=scenario_id,
-                questionnaire_id=questionnaire.questionnaire_id,
+                questionnaire=questionnaire,
                 submission=submission,
                 response_case=response_case,
-                status=EvaluationStatus.FAILED,
-                failure_reason=f"EVALUATION_FAILED: {exc}",
-                trace_id=current_trace_id(),
-                duration_ms=max(0, round((time.perf_counter() - started) * 1000)),
+                started=started,
+                reason=f"LLM_SECURITY_ERROR: {exc}",
+            )
+        except FidesReferenceError as exc:
+            return self._failed_execution(
+                scenario_id=scenario_id,
+                questionnaire=questionnaire,
+                submission=submission,
+                response_case=response_case,
+                started=started,
+                reason=f"FIDES_REFERENCE_ERROR: {exc}",
+            )
+        except Exception as exc:  # noqa: BLE001 - falha é dado experimental
+            return self._failed_execution(
+                scenario_id=scenario_id,
+                questionnaire=questionnaire,
+                submission=submission,
+                response_case=response_case,
+                started=started,
+                reason=f"EVALUATION_FAILED: {type(exc).__name__}",
             )
 
     @staticmethod
-    def _questions_and_answers(
-        questionnaire: Questionnaire, submission: QuestionnaireSubmission
-    ) -> str:
-        blocks = []
-        for answer in submission.answers:
-            question = questionnaire.questions[answer.question_number - 1]
-            blocks.append(
-                f"[question_id={questionnaire.questionnaire_id}:{answer.question_number}]\n"
-                f"Pergunta: {question.text}\nResposta: {answer.text}"
-            )
-        return "\n\n".join(blocks)
+    def _failed_execution(
+        *,
+        scenario_id: str,
+        questionnaire: Questionnaire,
+        submission: QuestionnaireSubmission,
+        response_case: ResponseCase | None,
+        started: float,
+        reason: str,
+    ) -> EvaluationExecution:
+        return EvaluationExecution(
+            scenario_id=scenario_id,
+            questionnaire_id=questionnaire.questionnaire_id,
+            submission=submission,
+            response_case=response_case,
+            status=EvaluationStatus.FAILED,
+            failure_reason=reason,
+            trace_id=current_trace_id(),
+            duration_ms=max(0, round((time.perf_counter() - started) * 1000)),
+        )
 
     @staticmethod
     def _evidences(
-        questionnaire: Questionnaire, submission: QuestionnaireSubmission
+        questionnaire: Questionnaire,
+        submission: QuestionnaireSubmission,
     ) -> list[EvidenciaFormulario]:
         return [
             EvidenciaFormulario(

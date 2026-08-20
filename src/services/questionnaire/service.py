@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from typing import Any
@@ -12,9 +11,15 @@ from agno.tools.function import Function
 from pydantic import ValidationError
 
 from src.agents.model import build_model, get_model_identifier
-from src.agents.utils import extract_usage, parse_model_output
+from src.agents.utils import extract_usage
 from src.prompts.manager import resolve_prompt
-from src.prompts.raw_prompts import QUESTIONNAIRE_SYSTEM_PROMPT, QUESTIONNAIRE_USER_PROMPT
+from src.prompts.raw_prompts import (
+    FIDES_QUESTIONNAIRE_PLANNER_SYSTEM_PROMPT,
+    FIDES_QUESTIONNAIRE_PLANNER_USER_PROMPT,
+    FIDES_QUESTIONNAIRE_QUARANTINE_SYSTEM_PROMPT,
+    FIDES_QUESTIONNAIRE_QUARANTINE_USER_PROMPT,
+    PLATFORM_DEFAULT_GUIDELINES,
+)
 from src.schemas.coordinator_prompt.schema import CoordinatorPrompt, ExpectedAction
 from src.schemas.job_description.schema import JobDescription
 from src.schemas.observability.schema import NodeLocus, TraceNode
@@ -24,6 +29,18 @@ from src.schemas.questionnaire.schema import (
     Questionnaire,
     QuestionnaireExecution,
     QuestionnairePayload,
+)
+from src.security.fides import (
+    ConfidentialityLabel,
+    ContentLabel,
+    ContentVariableStore,
+    FidesPolicyDenied,
+    FidesQuarantinedLLM,
+    FidesReferenceError,
+    FidesReferenceMonitor,
+    IntegrityLabel,
+    ToolPolicy,
+    VariableType,
 )
 from src.services.observability.react import ReactSpanStreamer
 from src.services.observability.service import (
@@ -39,9 +56,21 @@ from src.services.questionnaire.utils import (
 
 logger = structlog.get_logger(__name__)
 
+_TRUSTED_PUBLIC = ContentLabel(IntegrityLabel.TRUSTED, ConfidentialityLabel.PUBLIC)
+_UNTRUSTED_PUBLIC = ContentLabel(IntegrityLabel.UNTRUSTED, ConfidentialityLabel.PUBLIC)
+_ALLOWED_FAILURE_REASONS = {
+    "VAGA_NOT_FOUND",
+    "SAVE_FAILED",
+    "LLM_SECURITY_ERROR",
+    "LLM_FAILURE",
+}
+
 
 class QuestionnaireService:
-    async def execute(  # noqa: PLR0915 - o fluxo linear espelha o ciclo ReAct auditável
+    def __init__(self, *, quarantined_llm: FidesQuarantinedLLM | None = None) -> None:
+        self._quarantined_llm = quarantined_llm or FidesQuarantinedLLM()
+
+    async def execute(  # noqa: PLR0915 - fluxo ReAct e enforcement permanecem lineares
         self,
         job: JobDescription,
         coordinator_prompt: CoordinatorPrompt,
@@ -51,17 +80,35 @@ class QuestionnaireService:
         started = time.perf_counter()
         questionnaire_id = f"questionnaire-{uuid.uuid4()}"
         trajectory_id = f"trajectory-{uuid.uuid4()}"
-        command, guidelines = compose_coordinator_command(coordinator_prompt.command)
+        command, _ = compose_coordinator_command(coordinator_prompt.command)
+        store = ContentVariableStore()
+        monitor = FidesReferenceMonitor(store)
+        job_variable = store.put(
+            job.model_dump(mode="json", exclude={"source_brief"}),
+            variable_type=VariableType.JOB_DESCRIPTION,
+            label=_UNTRUSTED_PUBLIC,
+        )
+        command_variable = store.put(
+            command,
+            variable_type=VariableType.COORDINATOR_COMMAND,
+            label=_UNTRUSTED_PUBLIC,
+        )
+        requested_count = coordinator_prompt.requested_question_count
+        requested_count_text = requested_count if requested_count is not None else "entre 5 e 10"
 
-        system = resolve_prompt("front-a/questionnaire/system", QUESTIONNAIRE_SYSTEM_PROMPT)
+        system = resolve_prompt(
+            "front-a/questionnaire/fides/planner/system",
+            FIDES_QUESTIONNAIRE_PLANNER_SYSTEM_PROMPT,
+        )
         user = resolve_prompt(
-            "front-a/questionnaire/user",
-            QUESTIONNAIRE_USER_PROMPT,
+            "front-a/questionnaire/fides/planner/user",
+            FIDES_QUESTIONNAIRE_PLANNER_USER_PROMPT,
             variables={
                 "job_opening_id": job.id,
                 "questionnaire_id": questionnaire_id,
-                "coordinator_command": command,
-                "platform_guidelines": guidelines,
+                "job_reference": job_variable.reference,
+                "command_reference": command_variable.reference,
+                "requested_question_count": requested_count_text,
             },
         )
         model = build_model()
@@ -74,40 +121,86 @@ class QuestionnaireService:
         )
         state: dict[str, Any] = {"tool_sequence": []}
 
-        def get_info_vaga(code: str) -> dict[str, Any]:
-            """Busca os dados da vaga atual pelo código."""
-            state["tool_sequence"].append("get_info_vaga")
-            if code != job.id:
-                return {"error": "VAGA_NOT_FOUND", "code": code}
-            return job.model_dump(mode="json", exclude={"source_brief"})
-
-        def salvar_formulario(
-            questionnaireId: str, payload: QuestionnairePayload
+        async def gerar_questionario_quarentena(
+            job_reference: str,
+            command_reference: str,
         ) -> dict[str, Any]:
-            """Valida e salva o questionário no armazenamento efêmero do cenário."""
-            state["tool_sequence"].append("salvar_formulario")
-            if questionnaireId != questionnaire_id:
-                return {"error": "SAVE_FAILED", "message": "questionnaireId inválido"}
+            """Processa referências tipadas em um LLM confinado e retorna outra referência."""
+            state["tool_sequence"].append("gerar_questionario_quarentena")
             try:
-                if hasattr(payload, "model_dump"):
-                    raw = payload.model_dump(mode="json")
-                elif isinstance(payload, dict):
-                    raw = payload
-                else:
-                    raw = json.loads(str(payload))
-                validated = parse_model_output(raw, QuestionnairePayload)
-                cleaned = clean_questionnaire_payload(
-                    validated.model_dump(mode="json", exclude_none=True)
+                run = await self._quarantined_llm.run(
+                    monitor=monitor,
+                    control=_TRUSTED_PUBLIC,
+                    tool_name="gerar_questionario_quarentena",
+                    references={
+                        "job_description": job_reference,
+                        "coordinator_command": command_reference,
+                    },
+                    expected_types={
+                        "job_description": VariableType.JOB_DESCRIPTION,
+                        "coordinator_command": VariableType.COORDINATOR_COMMAND,
+                    },
+                    system_prompt_key="front-a/questionnaire/fides/quarantine/system",
+                    system_prompt_fallback=FIDES_QUESTIONNAIRE_QUARANTINE_SYSTEM_PROMPT,
+                    user_prompt_key="front-a/questionnaire/fides/quarantine/user",
+                    user_prompt_fallback=FIDES_QUESTIONNAIRE_QUARANTINE_USER_PROMPT,
+                    output_schema=LLMQuestionnaireResult,
+                    output_type=VariableType.QUESTIONNAIRE,
+                    model_role="default",
+                    trusted_variables={
+                        "platform_guidelines": PLATFORM_DEFAULT_GUIDELINES,
+                        "requested_question_count": requested_count_text,
+                    },
                 )
-                validate_question_count(cleaned, coordinator_prompt.requested_question_count)
+                state["quarantine_model"] = run.model
+                state["quarantine_usage"] = run.usage
+                return run.reference.model_safe_dict()
+            except FidesPolicyDenied as exc:
+                state["failure_reason"] = "LLM_SECURITY_ERROR"
+                state["security_error"] = str(exc)
+                return {"error": "LLM_SECURITY_ERROR"}
+            except FidesReferenceError as exc:
+                state["reference_error"] = str(exc)
+                return {"error": "FIDES_REFERENCE_ERROR"}
+            except Exception as exc:  # noqa: BLE001 - erro do provider/schema vira benchmark
+                state["quarantine_error"] = type(exc).__name__
+                return {"error": "LLM_FAILURE"}
+
+        def salvar_formulario(questionnaire_reference: str) -> dict[str, Any]:
+            """Materializa somente uma referência de questionário autorizada pelo monitor."""
+            state["tool_sequence"].append("salvar_formulario")
+            try:
+                values = monitor.authorize_and_resolve(
+                    tool="salvar_formulario",
+                    control=_TRUSTED_PUBLIC,
+                    references={"questionnaire": questionnaire_reference},
+                    policy=ToolPolicy(
+                        argument_types={"questionnaire": VariableType.QUESTIONNAIRE},
+                        accepts_untrusted_arguments=True,
+                        max_confidentiality=ConfidentialityLabel.PUBLIC,
+                    ),
+                )
+                generated = LLMQuestionnaireResult.model_validate(values["questionnaire"])
+                payload = QuestionnairePayload(questions=generated.questions)
+                cleaned = clean_questionnaire_payload(
+                    payload.model_dump(mode="json", exclude_none=True)
+                )
+                validate_question_count(cleaned, requested_count)
                 questionnaire = Questionnaire(
                     questionnaire_id=questionnaire_id,
                     job_description_id=job.id,
                     questions=cleaned["questions"],
                 )
-            except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
-                state["save_error"] = str(exc)
-                return {"error": "SAVE_FAILED", "message": str(exc)[:500]}
+            except FidesPolicyDenied as exc:
+                state["failure_reason"] = "LLM_SECURITY_ERROR"
+                state["security_error"] = str(exc)
+                return {"error": "LLM_SECURITY_ERROR"}
+            except FidesReferenceError as exc:
+                state["reference_error"] = str(exc)
+                return {"error": "FIDES_REFERENCE_ERROR"}
+            except (ValidationError, ValueError, TypeError) as exc:
+                state["save_error"] = type(exc).__name__
+                return {"error": "SAVE_FAILED"}
             state["questionnaire"] = questionnaire
             return {
                 "ok": True,
@@ -115,11 +208,28 @@ class QuestionnaireService:
                 "totalQuestions": len(questionnaire.questions),
             }
 
-        def registrar_falha_formulario(questionnaireId: str, errorReason: str) -> dict[str, Any]:
-            """Registra a falha observada pelo agente para este cenário."""
+        def registrar_falha_formulario(
+            questionnaireId: str,
+            errorReason: str,
+        ) -> dict[str, Any]:
+            """Registra um estado terminal permitido sem aceitar IDs produzidos pelo modelo."""
             state["tool_sequence"].append("registrar_falha_formulario")
+            try:
+                monitor.authorize_and_resolve(
+                    tool="registrar_falha_formulario",
+                    control=_TRUSTED_PUBLIC,
+                    references={},
+                    policy=ToolPolicy(argument_types={}),
+                )
+            except FidesPolicyDenied:
+                state["failure_reason"] = "LLM_SECURITY_ERROR"
+                return {"error": "LLM_SECURITY_ERROR"}
             if questionnaireId != questionnaire_id:
+                state["reference_error"] = "questionnaireId não pertence ao controle host"
                 return {"error": "INVALID_QUESTIONNAIRE_ID"}
+            if errorReason not in _ALLOWED_FAILURE_REASONS:
+                state["reference_error"] = "errorReason fora da enumeração permitida"
+                return {"error": "INVALID_FAILURE_REASON"}
             state["failure_reason"] = errorReason
             return {"ok": True, "questionnaireId": questionnaire_id, "errorReason": errorReason}
 
@@ -129,29 +239,20 @@ class QuestionnaireService:
             input={
                 "job_description_id": job.id,
                 "coordinator_prompt_id": coordinator_prompt.id,
-                "intent": coordinator_prompt.intent.value,
-                "category": coordinator_prompt.category.value,
-                "command": command,
+                "variables": [
+                    job_variable.model_safe_dict(),
+                    command_variable.model_safe_dict(),
+                ],
             },
-            metadata={
-                "trajectory_id": trajectory_id,
-                "expected_action": coordinator_prompt.expected_action.value,
-            },
+            metadata={"trajectory_id": trajectory_id, "security_runtime": "FIDES"},
         ) as agent_span:
             agent = Agent(
-                name="generator_agent",
+                name="fides_questionnaire_planner",
                 model=model,
                 description=system.content,
-                # Como no modo native-toolcall do rh-agent-agno, o payload canônico
-                # vem dos argumentos de salvar_formulario. Sem output_schema aqui, o
-                # Agno não força strict=True em todas as tools (incompatível com o
-                # campo opcional `description` do contrato real).
                 output_schema=None,
-                # OpenAI ativa strict automaticamente quando há output_schema. O contrato
-                # possui `description` legitimamente opcional; como no rh-agent-agno,
-                # desabilitamos strict nas tools sem relaxar a validação Pydantic local.
                 tools=[
-                    Function.from_callable(get_info_vaga, strict=False),
+                    Function.from_callable(gerar_questionario_quarentena, strict=False),
                     Function.from_callable(salvar_formulario, strict=False),
                     Function.from_callable(registrar_falha_formulario, strict=False),
                 ],
@@ -202,7 +303,10 @@ class QuestionnaireService:
                 generation_node,
                 as_type="generation",
                 input={"system": system.content, "user": user.content},
-                output=result_content,
+                output={
+                    "terminal_output_present": result_content is not None,
+                    "fides_audit": monitor.sanitized_audit_log(),
+                },
                 model=get_model_identifier(model),
                 prompt=system.langfuse_prompt,
                 metadata={
@@ -210,6 +314,8 @@ class QuestionnaireService:
                     "system_prompt_version": system.version,
                     "user_prompt_source": user.source,
                     "user_prompt_version": user.version,
+                    "quarantine_model": state.get("quarantine_model"),
+                    "quarantine_usage": state.get("quarantine_usage"),
                 },
             ) as generation:
                 usage = extract_usage(final_output) if final_output is not None else None
@@ -242,6 +348,7 @@ class QuestionnaireService:
                     "question_count": len(result.questionnaire.questions)
                     if result.questionnaire
                     else 0,
+                    "fides_audit": monitor.sanitized_audit_log(),
                 }
             )
             return result
@@ -257,14 +364,12 @@ class QuestionnaireService:
             value = content.get("reasoning")
             return str(value) if value else None
         if isinstance(content, str):
-            try:
-                return parse_model_output(content, LLMQuestionnaireResult).reasoning
-            except Exception:  # noqa: BLE001 - conteúdo de modelo não confiável
-                return None
+            stripped = content.strip()
+            return stripped[:5000] if stripped else None
         return None
 
     @staticmethod
-    def _status_from_state(
+    def _status_from_state(  # noqa: PLR0911 - prioridade explícita dos estados terminais
         state: dict[str, Any], run_error: Exception | None
     ) -> tuple[ExecutionStatus, str | None]:
         failure_reason = state.get("failure_reason")
@@ -279,6 +384,10 @@ class QuestionnaireService:
             return ExecutionStatus.SUCCEEDED, None
         if run_error is not None:
             return ExecutionStatus.FAILED, f"AGENT_RUNTIME_ERROR: {run_error}"
+        if state.get("reference_error"):
+            return ExecutionStatus.FAILED, f"FIDES_REFERENCE_ERROR: {state['reference_error']}"
+        if state.get("quarantine_error"):
+            return ExecutionStatus.FAILED, f"LLM_FAILURE: {state['quarantine_error']}"
         if state.get("save_error"):
             return ExecutionStatus.FAILED, f"SAVE_FAILED: {state['save_error']}"
         return ExecutionStatus.FAILED, "MISSING_TERMINAL_TOOL_CALL"
