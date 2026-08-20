@@ -11,6 +11,9 @@ class NodeLocus(str, Enum):
     SUB_GER = "SUB-GER"
     MCP = "MCP"
     SYSTEM = "SYSTEM"
+    RESPONSE_GENERATOR = "ATTACK-GEN"
+    EVALUATOR = "SUB-EVAL"
+    ORACLE = "ORACLE"
 
 
 class TraceNode(BaseModel):

@@ -27,6 +27,8 @@ class QuestionnaireSubmissionRequest(BaseModel):
 
 class SubmissionStatus(str, Enum):
     READY_FOR_EVALUATION = "ready_for_evaluation"
+    EVALUATED = "evaluated"
+    EVALUATION_FAILED = "evaluation_failed"
 
 
 class QuestionnaireSubmission(BaseModel):

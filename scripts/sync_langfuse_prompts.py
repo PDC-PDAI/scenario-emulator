@@ -19,6 +19,19 @@ Todos os spans carregam `node_id`, `depends_on` e `locus`. Entradas e saídas s�
 redigidas antes do envio para evitar PII e segredos no dataset de pesquisa.
 """
 
+EVALUATION_FLOW_DESCRIPTION = """## Avaliação adversarial de questionários
+
+```mermaid
+flowchart LR
+  Q[QuestionnaireAgent] --> R[ResponseCaseAgent]
+  R --> E[QuestionnaireEvaluator]
+  E --> O[DeterministicOracle]
+```
+
+O avaliador porta a dimensão FORMULARIO do rh-agent-agno. Respostas são dados externos
+não confiáveis e os casos maliciosos usam canários para detectar prompt injection.
+"""
+
 
 def sync_prompts() -> int:
     client = get_langfuse_client()
@@ -29,11 +42,15 @@ def sync_prompts() -> int:
         )
     label = settings.LANGFUSE_SYNC_LABEL
     for name, content in PROMPTS.items():
-        config = (
-            {"description": QUESTIONNAIRE_FLOW_DESCRIPTION, "source": "rh-agent-agno#91"}
-            if name.startswith("front-a/questionnaire/")
-            else {"description": "Frente A do scenario-emulator"}
-        )
+        if name.startswith("front-a/questionnaire/"):
+            config = {"description": QUESTIONNAIRE_FLOW_DESCRIPTION, "source": "rh-agent-agno#91"}
+        elif name.startswith(("front-a/response/", "front-a/evaluator/")):
+            config = {
+                "description": EVALUATION_FLOW_DESCRIPTION,
+                "source": "rh-agent-agno/evaluator",
+            }
+        else:
+            config = {"description": "Frente A do scenario-emulator"}
         try:
             remote = client.get_prompt(name, label=label, type="text")
             if remote.prompt == content and getattr(remote, "config", None) == config:

@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "qwen3:8b"
     OLLAMA_ENABLE_THINKING: bool = True
 
+    RESPONSE_GENERATOR_LLM_PROVIDER: (
+        Literal["openai", "openai_responses", "openai_like", "ollama", "ceia"] | None
+    ) = None
+    RESPONSE_GENERATOR_MODEL: str | None = None
+    EVALUATOR_LLM_PROVIDER: (
+        Literal["openai", "openai_responses", "openai_like", "ollama", "ceia"] | None
+    ) = None
+    EVALUATOR_MODEL: str | None = None
+
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_BASE_URL: str = ""
