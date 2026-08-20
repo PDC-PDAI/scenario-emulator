@@ -10,6 +10,7 @@ from fastapi.responses import Response
 
 from src.clients.langfuse.client import flush_langfuse
 from src.repositories.sqlite import SQLiteRepository
+from src.schemas.agent_debug.schema import AgentDebugTrajectory
 from src.schemas.api.schema import (
     HealthResponse,
     JobDescriptionView,
@@ -29,6 +30,7 @@ from src.schemas.submission.schema import (
     QuestionnaireSubmissionRequest,
     SubmissionStatus,
 )
+from src.services.agent_debug.service import scenario_trajectories
 from src.services.evaluation.service import EvaluationService
 from src.services.scenario.service import ScenarioService
 from src.services.submission.service import SubmissionService
@@ -120,6 +122,10 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
             {"name": "submissions", "description": "Respostas aguardando avaliação externa."},
             {"name": "evaluations", "description": "Avaliações persistidas de formulário."},
             {"name": "benchmarks", "description": "Artefatos do benchmark defensivo."},
+            {
+                "name": "agent-debug",
+                "description": "Trajetórias no contrato de entrada do AgentDebug-RH.",
+            },
         ],
     )
     if settings.api_cors_origins:
@@ -409,6 +415,29 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
     async def get_benchmark_jsonl(scenario_id: str) -> Response:
         records = scenario_or_404(scenario_id).benchmark_records
         body = "\n".join(record.model_dump_json(by_alias=True) for record in records) + "\n"
+        return Response(content=body, media_type="application/x-ndjson")
+
+    @api.get(
+        "/api/v1/scenarios/{scenario_id}/agent-debug/trajectories",
+        response_model=list[AgentDebugTrajectory],
+        tags=["agent-debug"],
+        summary="Obtém trajetórias compatíveis com o AgentDebug-RH",
+    )
+    async def get_agent_debug_trajectories(
+        scenario_id: str,
+    ) -> list[AgentDebugTrajectory]:
+        return scenario_trajectories(scenario_or_404(scenario_id))
+
+    @api.get(
+        "/api/v1/scenarios/{scenario_id}/agent-debug.jsonl",
+        response_class=Response,
+        tags=["agent-debug"],
+        summary="Exporta a entrada do AgentDebug-RH em JSONL",
+        responses={200: {"content": {"application/x-ndjson": {}}}},
+    )
+    async def get_agent_debug_jsonl(scenario_id: str) -> Response:
+        trajectories = scenario_trajectories(scenario_or_404(scenario_id))
+        body = "\n".join(item.model_dump_json() for item in trajectories) + "\n"
         return Response(content=body, media_type="application/x-ndjson")
 
     return api

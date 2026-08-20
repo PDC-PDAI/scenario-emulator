@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     ) = None
     EVALUATOR_MODEL: str | None = None
 
+    # Debug verboso do Agno é opt-in: pode incluir prompts e argumentos de tools.
+    AGNO_DEBUG: bool = False
+    AGNO_DEBUG_LEVEL: Literal[1, 2] = 1
+
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_BASE_URL: str = ""

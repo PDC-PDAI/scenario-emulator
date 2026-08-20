@@ -5,6 +5,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.schemas.agent_debug.schema import AgentDebugTrajectory, FailureAnnotation
 from src.schemas.submission.schema import AnswerInput
 
 
@@ -81,3 +82,5 @@ class ResponseGenerationBatch(BaseModel):
     failure_reason: str | None = None
     trace_id: str | None = None
     duration_ms: int = Field(ge=0)
+    agent_debug_trajectory: AgentDebugTrajectory | None = None
+    failure_annotation: FailureAnnotation | None = None

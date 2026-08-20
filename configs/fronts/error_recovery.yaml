@@ -1,0 +1,42 @@
+schema_version: "1.0"
+name: error_recovery
+front: error_recovery
+description: >-
+  Gera trajetórias com checkpoints para diagnóstico por step e cataloga os
+  primeiros modos de falha que serão usados na injeção e no re-rollout.
+
+pipeline:
+  benign_commands: 3
+  malicious_commands: 0
+  benign_responses: 1
+  malicious_responses: 0
+  questionnaire_evaluator: true
+
+artifacts:
+  output_dir: outputs/error_recovery
+  scenario_json: scenario.json
+  benchmark_jsonl: benchmark.jsonl
+  agent_debug_jsonl: agent-debug.jsonl
+  trajectories_dir: trajectories
+
+error_recovery:
+  capture_checkpoints: true
+  # Só mude para true quando o contrato HTTP de re-rollout estiver implementado.
+  replay_enabled: false
+  fault_catalog:
+    - id: action_misalignment
+      target_module: action
+      error_type: misalignment
+      description: A ação executada não corresponde ao objetivo planejado.
+    - id: invalid_action
+      target_module: action
+      error_type: invalid_action
+      description: O agente chama uma tool inexistente ou indisponível.
+    - id: action_format_error
+      target_module: action
+      error_type: format_error
+      description: A ação produz uma saída incompatível com o schema esperado.
+    - id: action_parameter_error
+      target_module: action
+      error_type: parameter_error
+      description: A tool correta recebe parâmetros ausentes ou inválidos.
