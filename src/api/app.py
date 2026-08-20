@@ -19,6 +19,7 @@ from src.schemas.api.schema import (
     ScenarioSummary,
 )
 from src.schemas.benchmark.schema import BenchmarkRecord
+from src.schemas.evaluation.schema import EvaluationExecution, EvaluationStatus
 from src.schemas.questionnaire.schema import QuestionnaireExecution
 from src.schemas.scenario.schema import ScenarioRun
 from src.schemas.submission.schema import (
@@ -26,7 +27,9 @@ from src.schemas.submission.schema import (
     JobDescriptionContext,
     QuestionnaireSubmission,
     QuestionnaireSubmissionRequest,
+    SubmissionStatus,
 )
+from src.services.evaluation.service import EvaluationService
 from src.services.scenario.service import ScenarioService
 from src.services.submission.service import SubmissionService
 from src.settings import settings
@@ -50,10 +53,17 @@ def _scenario_summary(scenario: ScenarioRun) -> ScenarioSummary:
             execution.questionnaire is not None for execution in scenario.executions
         ),
         benchmark_passed=sum(execution.benchmark_passed for execution in scenario.executions),
+        evaluation_count=len(scenario.evaluation_executions),
+        evaluation_benchmark_passed=sum(
+            bool(execution.oracle and execution.oracle.passed)
+            for execution in scenario.evaluation_executions
+        ),
     )
 
 
-def _questionnaire_view(scenario: ScenarioRun, execution: QuestionnaireExecution) -> QuestionnaireView:
+def _questionnaire_view(
+    scenario: ScenarioRun, execution: QuestionnaireExecution
+) -> QuestionnaireView:
     questionnaire = execution.questionnaire
     if questionnaire is None:  # pragma: no cover - protegido pelas rotas chamadoras
         raise ValueError("A trajetória não produziu questionário.")
@@ -84,18 +94,20 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
     repository: SQLiteRepository | None = None,
     scenario_service: ScenarioService | None = None,
     submission_service: SubmissionService | None = None,
+    evaluation_service: EvaluationService | None = None,
 ) -> FastAPI:
     repo = repository or SQLiteRepository(settings.API_DATABASE_PATH)
     scenarios = scenario_service or ScenarioService()
     submissions = submission_service or SubmissionService()
+    evaluator = evaluation_service or EvaluationService()
 
     api = FastAPI(
         title="Scenario Emulator API",
         summary="Geração de cenários e entrega de questionários de RH.",
         description=(
             "Executa a Frente A (vaga → comandos do coordenador → questionários), "
-            "recebe respostas e fornece um payload autocontido para uma etapa externa de "
-            "avaliação. Esta API não pontua nem avalia candidatos."
+            "gera respostas sintéticas benignas e adversariais, avalia a dimensão de "
+            "formulário e mantém o handoff autocontido para integrações externas."
         ),
         version=_VERSION,
         docs_url="/docs",
@@ -106,6 +118,7 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
             {"name": "scenarios", "description": "Execução e consulta da Frente A."},
             {"name": "questionnaires", "description": "Questionários próprios para a UI."},
             {"name": "submissions", "description": "Respostas aguardando avaliação externa."},
+            {"name": "evaluations", "description": "Avaliações persistidas de formulário."},
             {"name": "benchmarks", "description": "Artefatos do benchmark defensivo."},
         ],
     )
@@ -121,7 +134,9 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
     def scenario_or_404(scenario_id: str) -> ScenarioRun:
         scenario = repo.get_scenario(scenario_id)
         if scenario is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cenário não encontrado.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Cenário não encontrado."
+            )
         return scenario
 
     def questionnaire_or_404(
@@ -163,6 +178,8 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
                 payload.brief,
                 benign_count=payload.benign_count,
                 malicious_count=payload.malicious_count,
+                benign_response_count=payload.benign_response_count,
+                malicious_response_count=payload.malicious_response_count,
             )
             repo.save_scenario(result)
             return result
@@ -185,9 +202,7 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ScenarioSummary]:
-        return [
-            _scenario_summary(item) for item in repo.list_scenarios(limit=limit, offset=offset)
-        ]
+        return [_scenario_summary(item) for item in repo.list_scenarios(limit=limit, offset=offset)]
 
     @api.get(
         "/api/v1/scenarios/{scenario_id}",
@@ -300,6 +315,80 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
             questionnaire=questionnaire,
             submission=submission,
         )
+
+    @api.post(
+        "/api/v1/submissions/{submission_id}/evaluate",
+        response_model=EvaluationExecution,
+        tags=["evaluations"],
+        summary="Avalia explicitamente uma submissão",
+        description=(
+            "Operação idempotente: se a submissão já tiver avaliação persistida, "
+            "retorna o resultado existente sem chamar o modelo novamente."
+        ),
+    )
+    async def evaluate_submission(submission_id: str) -> EvaluationExecution:
+        submission = submission_or_404(submission_id)
+        existing = repo.get_evaluation_for_submission(submission_id)
+        if existing is not None:
+            return existing
+        scenario, questionnaire_execution = questionnaire_or_404(submission.questionnaire_id)
+        questionnaire = questionnaire_execution.questionnaire
+        if questionnaire is None:  # pragma: no cover - garantido pelo repositório
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        node_id = (
+            f"{scenario.scenario_id}.questionnaire."
+            f"{questionnaire_execution.coordinator_prompt.sequence:03d}"
+        )
+        try:
+            evaluation = await evaluator.evaluate(
+                scenario_id=scenario.scenario_id,
+                job=scenario.job_description,
+                questionnaire=questionnaire,
+                submission=submission,
+                response_case=None,
+                depends_on=[node_id],
+            )
+            submission.status = (
+                SubmissionStatus.EVALUATED
+                if evaluation.status is EvaluationStatus.SUCCEEDED
+                else SubmissionStatus.EVALUATION_FAILED
+            )
+            evaluation.submission = submission
+            repo.save_submission(submission)
+            repo.save_evaluation(evaluation)
+            return evaluation
+        finally:
+            flush_langfuse()
+
+    @api.get(
+        "/api/v1/submissions/{submission_id}/evaluation",
+        response_model=EvaluationExecution,
+        tags=["evaluations"],
+        summary="Consulta a avaliação de uma submissão",
+    )
+    async def get_submission_evaluation(submission_id: str) -> EvaluationExecution:
+        submission_or_404(submission_id)
+        evaluation = repo.get_evaluation_for_submission(submission_id)
+        if evaluation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Avaliação da submissão ainda não existe.",
+            )
+        return evaluation
+
+    @api.get(
+        "/api/v1/scenarios/{scenario_id}/evaluations",
+        response_model=list[EvaluationExecution],
+        tags=["evaluations"],
+        summary="Lista avaliações persistidas do cenário",
+    )
+    async def list_evaluations(
+        scenario_id: str,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> list[EvaluationExecution]:
+        scenario_or_404(scenario_id)
+        return repo.list_evaluations(scenario_id, limit=limit, offset=offset)
 
     @api.get(
         "/api/v1/scenarios/{scenario_id}/benchmark-records",

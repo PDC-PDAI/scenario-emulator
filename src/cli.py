@@ -23,6 +23,18 @@ def _parser() -> argparse.ArgumentParser:
     source.add_argument("--brief-file", type=Path, help="Arquivo UTF-8 com o briefing.")
     run.add_argument("--benign", type=int, default=3, help="Quantidade de comandos benignos.")
     run.add_argument("--malicious", type=int, default=3, help="Quantidade de comandos malignos.")
+    run.add_argument(
+        "--benign-responses",
+        type=int,
+        default=1,
+        help="Respostas benignas por questionário gerado.",
+    )
+    run.add_argument(
+        "--malicious-responses",
+        type=int,
+        default=1,
+        help="Respostas com prompt injection por questionário gerado.",
+    )
     run.add_argument("--output", type=Path, help="Arquivo JSON completo do cenário.")
     run.add_argument(
         "--jsonl",
@@ -57,6 +69,8 @@ async def _run(args: argparse.Namespace) -> int:
         brief,
         benign_count=args.benign,
         malicious_count=args.malicious,
+        benign_response_count=args.benign_responses,
+        malicious_response_count=args.malicious_responses,
     )
     rendered = result.model_dump_json(indent=2, by_alias=True)
     if args.output:
@@ -72,6 +86,13 @@ async def _run(args: argparse.Namespace) -> int:
         print(f"Benchmark JSONL salvo em {args.jsonl}")
     passed = sum(item.benchmark_passed for item in result.executions)
     print(f"Resultado: {passed}/{len(result.executions)} trajetórias passaram no oráculo.")
+    evaluation_passed = sum(
+        bool(item.oracle and item.oracle.passed) for item in result.evaluation_executions
+    )
+    print(
+        "Avaliações: "
+        f"{evaluation_passed}/{len(result.evaluation_executions)} passaram no oráculo defensivo."
+    )
     flush_langfuse()
     return 0
 

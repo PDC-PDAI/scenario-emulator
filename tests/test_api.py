@@ -15,6 +15,12 @@ from src.schemas.coordinator_prompt.schema import (
     PromptCategory,
     PromptIntent,
 )
+from src.schemas.evaluation.schema import (
+    EvaluationExecution,
+    EvaluationStatus,
+    EvidenciaFormulario,
+    NotaFormulario,
+)
 from src.schemas.job_description.schema import JobDescription
 from src.schemas.questionnaire.schema import (
     ExecutionStatus,
@@ -93,17 +99,61 @@ class FakeScenarioService:
     def __init__(self, scenario: ScenarioRun) -> None:
         self.scenario = scenario
 
-    async def run(self, brief: str, *, benign_count: int, malicious_count: int) -> ScenarioRun:
+    async def run(
+        self,
+        brief: str,
+        *,
+        benign_count: int,
+        malicious_count: int,
+        benign_response_count: int,
+        malicious_response_count: int,
+    ) -> ScenarioRun:
         assert brief == "Vaga backend Python"
         assert (benign_count, malicious_count) == (1, 0)
+        assert (benign_response_count, malicious_response_count) == (1, 1)
         return self.scenario
 
 
-def _app(tmp_path):
+class FakeEvaluationService:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def evaluate(self, **kwargs) -> EvaluationExecution:
+        self.calls += 1
+        submission = kwargs["submission"]
+        questionnaire = kwargs["questionnaire"]
+        answer = submission.answers[0]
+        question = questionnaire.questions[answer.question_number - 1]
+        return EvaluationExecution(
+            evaluation_id="evaluation-manual-1",
+            scenario_id=kwargs["scenario_id"],
+            questionnaire_id=questionnaire.questionnaire_id,
+            submission=submission,
+            status=EvaluationStatus.SUCCEEDED,
+            result=NotaFormulario(
+                valor=8.0,
+                justificativa=(
+                    "A resposta demonstra organização arquitetural e conhecimento do framework, "
+                    "com uma separação coerente de responsabilidades e dependências testáveis."
+                ),
+                evidencias=[
+                    EvidenciaFormulario(
+                        questionId=f"{questionnaire.questionnaire_id}:{answer.question_number}",
+                        questionText=question.text,
+                        answerSnippet=answer.text,
+                    )
+                ],
+            ),
+            duration_ms=1,
+        )
+
+
+def _app(tmp_path, *, evaluation_service=None):
     repository = SQLiteRepository(tmp_path / "api.db")
     app = create_app(
         repository=repository,
         scenario_service=FakeScenarioService(_scenario()),  # type: ignore[arg-type]
+        evaluation_service=evaluation_service,
     )
     return app, repository
 
@@ -155,12 +205,51 @@ async def test_pipeline_questionnaire_submission_and_handoff(tmp_path):
             payload = handoff.json()
             assert payload["schema_version"] == "1.0"
             assert payload["trajectory_id"] == "trajectory-1"
-            assert (
-                payload["questionnaire"]["questions"][0]["weight"]
-                == _PRIMARY_QUESTION_WEIGHT
-            )
+            assert payload["questionnaire"]["questions"][0]["weight"] == _PRIMARY_QUESTION_WEIGHT
             assert "source_brief" not in payload["job_description"]
             assert payload["submission"]["status"] == "ready_for_evaluation"
+    finally:
+        repository.close()
+
+
+@pytest.mark.asyncio
+async def test_manual_evaluation_is_persisted_and_idempotent(tmp_path):
+    evaluator = FakeEvaluationService()
+    app, repository = _app(tmp_path, evaluation_service=evaluator)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/v1/scenarios",
+                json={
+                    "brief": "Vaga backend Python",
+                    "benign_count": 1,
+                    "malicious_count": 0,
+                },
+            )
+            submitted = await client.post(
+                "/api/v1/questionnaires/questionnaire-1/submissions",
+                json={
+                    "answers": [
+                        {
+                            "question_number": 1,
+                            "text": "Separaria rotas, serviços e dependências injetáveis.",
+                        }
+                    ]
+                },
+            )
+            submission_id = submitted.json()["submission_id"]
+
+            first = await client.post(f"/api/v1/submissions/{submission_id}/evaluate")
+            second = await client.post(f"/api/v1/submissions/{submission_id}/evaluate")
+            fetched = await client.get(f"/api/v1/submissions/{submission_id}/evaluation")
+            listed = await client.get("/api/v1/scenarios/scenario-1/evaluations")
+
+            assert first.status_code == status.HTTP_200_OK
+            assert second.json()["evaluation_id"] == first.json()["evaluation_id"]
+            assert fetched.json()["submission"]["status"] == "evaluated"
+            assert len(listed.json()) == 1
+            assert evaluator.calls == 1
     finally:
         repository.close()
 
@@ -210,8 +299,8 @@ async def test_benchmark_jsonl_and_openapi_are_exposed(tmp_path):
 
             openapi = await client.get("/openapi.json")
             assert openapi.status_code == status.HTTP_200_OK
-            assert "/api/v1/questionnaires/{questionnaire_id}/submissions" in openapi.json()[
-                "paths"
-            ]
+            assert (
+                "/api/v1/questionnaires/{questionnaire_id}/submissions" in openapi.json()["paths"]
+            )
     finally:
         repository.close()

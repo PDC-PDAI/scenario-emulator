@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from src.schemas.evaluation.schema import EvaluationExecution
 from src.schemas.questionnaire.schema import QuestionnaireExecution
 from src.schemas.scenario.schema import ScenarioRun
 from src.schemas.submission.schema import QuestionnaireSubmission
@@ -60,10 +61,28 @@ class SQLiteRepository:
                     FOREIGN KEY (scenario_id) REFERENCES scenarios(scenario_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS evaluations (
+                    evaluation_id TEXT PRIMARY KEY,
+                    submission_id TEXT NOT NULL UNIQUE,
+                    questionnaire_id TEXT NOT NULL,
+                    scenario_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY (submission_id)
+                        REFERENCES submissions(submission_id) ON DELETE CASCADE,
+                    FOREIGN KEY (questionnaire_id)
+                        REFERENCES questionnaires(questionnaire_id) ON DELETE CASCADE,
+                    FOREIGN KEY (scenario_id) REFERENCES scenarios(scenario_id) ON DELETE CASCADE
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_questionnaires_scenario
                     ON questionnaires(scenario_id);
                 CREATE INDEX IF NOT EXISTS idx_submissions_questionnaire
                     ON submissions(questionnaire_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_evaluations_scenario
+                    ON evaluations(scenario_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_evaluations_questionnaire
+                    ON evaluations(questionnaire_id, created_at DESC);
                 """
             )
 
@@ -76,6 +95,28 @@ class SQLiteRepository:
             )
             for execution in scenario.executions
             if execution.questionnaire is not None
+        ]
+        evaluations = scenario.evaluation_executions
+        submission_rows = [
+            (
+                evaluation.submission.submission_id,
+                evaluation.submission.questionnaire_id,
+                evaluation.submission.scenario_id,
+                evaluation.submission.submitted_at.isoformat(),
+                evaluation.submission.model_dump_json(),
+            )
+            for evaluation in evaluations
+        ]
+        evaluation_rows = [
+            (
+                evaluation.evaluation_id,
+                evaluation.submission.submission_id,
+                evaluation.questionnaire_id,
+                evaluation.scenario_id,
+                evaluation.created_at.isoformat(),
+                evaluation.model_dump_json(),
+            )
+            for evaluation in evaluations
         ]
         with self._lock, self._connection:
             self._connection.execute(
@@ -101,6 +142,29 @@ class SQLiteRepository:
                     trajectory_id = excluded.trajectory_id
                 """,
                 questionnaire_rows,
+            )
+            self._connection.executemany(
+                """
+                INSERT INTO submissions (
+                    submission_id, questionnaire_id, scenario_id, created_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(submission_id) DO UPDATE SET
+                    payload_json = excluded.payload_json
+                """,
+                submission_rows,
+            )
+            self._connection.executemany(
+                """
+                INSERT INTO evaluations (
+                    evaluation_id, submission_id, questionnaire_id,
+                    scenario_id, created_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(submission_id) DO UPDATE SET
+                    evaluation_id = excluded.evaluation_id,
+                    created_at = excluded.created_at,
+                    payload_json = excluded.payload_json
+                """,
+                evaluation_rows,
             )
 
     def get_scenario(self, scenario_id: str) -> ScenarioRun | None:
@@ -176,6 +240,33 @@ class SQLiteRepository:
                 ),
             )
 
+    def save_evaluation(self, evaluation: EvaluationExecution) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO evaluations (
+                    evaluation_id,
+                    submission_id,
+                    questionnaire_id,
+                    scenario_id,
+                    created_at,
+                    payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(submission_id) DO UPDATE SET
+                    evaluation_id = excluded.evaluation_id,
+                    created_at = excluded.created_at,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    evaluation.evaluation_id,
+                    evaluation.submission.submission_id,
+                    evaluation.questionnaire_id,
+                    evaluation.scenario_id,
+                    evaluation.created_at.isoformat(),
+                    evaluation.model_dump_json(),
+                ),
+            )
+
     def get_submission(self, submission_id: str) -> QuestionnaireSubmission | None:
         with self._lock:
             row = self._connection.execute(
@@ -203,6 +294,42 @@ class SQLiteRepository:
                 (questionnaire_id, limit, offset),
             ).fetchall()
         return [QuestionnaireSubmission.model_validate_json(row["payload_json"]) for row in rows]
+
+    def get_evaluation(self, evaluation_id: str) -> EvaluationExecution | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload_json FROM evaluations WHERE evaluation_id = ?",
+                (evaluation_id,),
+            ).fetchone()
+        return EvaluationExecution.model_validate_json(row["payload_json"]) if row else None
+
+    def get_evaluation_for_submission(self, submission_id: str) -> EvaluationExecution | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload_json FROM evaluations WHERE submission_id = ?",
+                (submission_id,),
+            ).fetchone()
+        return EvaluationExecution.model_validate_json(row["payload_json"]) if row else None
+
+    def list_evaluations(
+        self,
+        scenario_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[EvaluationExecution]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT payload_json
+                FROM evaluations
+                WHERE scenario_id = ?
+                ORDER BY created_at DESC, evaluation_id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (scenario_id, limit, offset),
+            ).fetchall()
+        return [EvaluationExecution.model_validate_json(row["payload_json"]) for row in rows]
 
     def ping(self) -> bool:
         with self._lock:
