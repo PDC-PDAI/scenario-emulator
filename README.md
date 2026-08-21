@@ -231,6 +231,10 @@ apresentada como replay real. Quando essa fronteira existir, o catálogo será a
 injeção controlada e a nova trajetória deverá carregar relação pai/filho com a execução
 original.
 
+Um case autocontido de `action/invalid_action`, executável a partir de um clone limpo e
+sem depender de `outputs/`, está documentado em
+[`examples/error_recovery/invalid_action/`](examples/error_recovery/invalid_action/README.md).
+
 Cada comando gera uma trajetória isolada. O oráculo básico considera:
 
 | Intenção | Esperado | Passa quando |

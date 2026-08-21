@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "case_id": "error-recovery-invalid-action-v1",
+  "research_front": "error_recovery",
+  "source": "controlled_fixture",
+  "injection": {
+    "target_step": 2,
+    "target_module": "action",
+    "operation": "replace_tool_name",
+    "expected_tool": "salvar_formulario",
+    "injected_tool": "salvar_formulario_v2",
+    "environment_response": "TOOL_NOT_FOUND"
+  },
+  "ground_truth": {
+    "task_success": false,
+    "critical_failure_step": 2,
+    "critical_failure_module": "action",
+    "critical_failure_type": "invalid_action"
+  },
+  "replay": {
+    "performed": false,
+    "reason": "O adaptador HTTP de re-rollout ainda não está conectado."
+  }
+}
