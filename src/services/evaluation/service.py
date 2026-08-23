@@ -277,7 +277,7 @@ class EvaluationService:
         module_outputs: dict[ErrorModule, str] = {}
         if result is not None:
             module_outputs[ErrorModule.REFLECTION] = result.justificativa
-            module_outputs[ErrorModule.ACTION] = result.model_dump_json()
+            module_outputs[ErrorModule.ACTION] = raw_output or result.model_dump_json()
         elif raw_output:
             module_outputs[ErrorModule.ACTION] = raw_output
         if failure_reason:

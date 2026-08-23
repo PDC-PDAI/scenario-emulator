@@ -29,6 +29,12 @@ def test_invalid_action_example_matches_agent_debug_contract_and_oracle():
     assert trajectory == jsonl_trajectory
     assert trajectory.success is False
     assert len(trajectory.steps) == _CRITICAL_STEP
+    for step in trajectory.steps:
+        raw_output = json.loads(step.raw_output)
+        assert raw_output["planning"] == step.module_outputs[ErrorModule.PLANNING]
+        assert raw_output["action"] == json.loads(
+            step.module_outputs[ErrorModule.ACTION]
+        )
     critical = trajectory.steps[manifest["ground_truth"]["critical_failure_step"] - 1]
     assert "salvar_formulario_v2" in critical.module_outputs[ErrorModule.ACTION]
     assert "TOOL_NOT_FOUND" in critical.env_response
@@ -41,4 +47,6 @@ def test_invalid_action_example_matches_agent_debug_contract_and_oracle():
     assert expected["critical_error"]["error_type"] == manifest["ground_truth"][
         "critical_failure_type"
     ]
+    assert set(expected["expected_feedback"]) == {"target_step", "expected_effect"}
+    assert expected["expected_feedback"]["target_step"] == _CRITICAL_STEP
     assert manifest["replay"]["performed"] is False

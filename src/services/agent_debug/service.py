@@ -131,16 +131,21 @@ def agent_debug_trajectory(
         ),
     }
     action = json.dumps(output, ensure_ascii=False, sort_keys=True)
+    planning = execution.reasoning_summary or "Execução legada sem timeline ReAct persistida."
+    raw_output = json.dumps(
+        {"planning": planning, "action": output},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     step = AgentDebugTrajectoryStep(
         index=1,
         module_outputs={
-            ErrorModule.PLANNING: execution.reasoning_summary
-            or "Execução legada sem timeline ReAct persistida.",
+            ErrorModule.PLANNING: planning,
             ErrorModule.ACTION: action,
         },
         step_input=execution.coordinator_prompt.command,
         env_response=execution.failure_reason or execution.status.value,
-        raw_output=action,
+        raw_output=raw_output,
     )
     return AgentDebugTrajectory(
         trajectory_id=execution.trajectory_id,

@@ -246,6 +246,10 @@ Falha de runtime, ausência de tool terminal, salvamento inválido, over-refusal
 
 ### Contrato de erro e AgentDebug-RH
 
+A definição normativa de `step`, o contrato de entrada/saída e a matriz de
+disponibilidade das métricas estão em
+[`docs/data-contracts/agentdebug.md`](docs/data-contracts/agentdebug.md).
+
 Cada execução persiste dois níveis diferentes de informação:
 
 - `failure_annotation`: rótulo determinístico do oráculo do emulador, com `code`,
@@ -253,11 +257,12 @@ Cada execução persiste dois níveis diferentes de informação:
 - `agent_debug_trajectory`: entrada autocontida da pipeline de diagnóstico, no mesmo
   formato de `Trajectory` usado pelo projeto em `.references/agentdebug-rh-*`.
 
-Cada tool call vira um `TrajectoryStep` 1-indexado. `module_outputs` contém apenas o
-que é observável (`planning` e `action`), `step_input` carrega o contexto disponível
-naquele momento e `env_response` guarda o resultado ou erro da tool. Memory e
-reflection não são fabricados quando o agente não os emite. Falhas sem tool terminal
-ganham um último step explícito para não desaparecerem da análise.
+Cada tool call vira um `TrajectoryStep` 1-indexado: um ciclo de decisão que reúne o
+contexto, os módulos emitidos, a ação e a resposta do ambiente. `module_outputs`
+contém apenas o que é observável (`planning` e `action`), `step_input` carrega o
+contexto disponível naquele momento e `env_response` guarda o resultado ou erro da
+tool. Memory e reflection não são fabricados quando o agente não os emite. Falhas sem
+tool terminal ganham um último step explícito para não desaparecerem da análise.
 
 Cada chamada do avaliador também gera uma trajetória. Seu step registra a justificativa
 emitida em `reflection`, a nota estruturada em `action` e o resultado do oráculo em

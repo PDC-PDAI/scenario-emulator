@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -98,6 +99,9 @@ async def test_agent_debug_steps_are_captured_without_langfuse(monkeypatch):
     assert '"tool": "get_info_vaga"' in steps[0].module_outputs["action"]
     assert '"title": "Dev"' in steps[0].env_response
     assert steps[0].step_input == "Gere perguntas para a vaga job-1."
+    raw_output = json.loads(steps[0].raw_output)
+    assert raw_output["planning"] == steps[0].module_outputs["planning"]
+    assert raw_output["action"] == json.loads(steps[0].module_outputs["action"])
 
 
 def test_terminal_failure_becomes_analyzable_step(monkeypatch):
@@ -118,3 +122,6 @@ def test_terminal_failure_becomes_analyzable_step(monkeypatch):
     assert "planning" in step.module_outputs
     assert "action" in step.module_outputs
     assert "MISSING_TERMINAL_TOOL_CALL" in step.env_response
+    raw_output = json.loads(step.raw_output)
+    assert raw_output["planning"] == step.module_outputs["planning"]
+    assert raw_output["action"] == json.loads(step.module_outputs["action"])

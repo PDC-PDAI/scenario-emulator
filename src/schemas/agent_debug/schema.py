@@ -92,7 +92,18 @@ def is_valid_error_pair(module: ErrorModule, error_type: ErrorType) -> bool:
 
 
 class AgentDebugTrajectoryStep(BaseModel):
-    """Um checkpoint 1-indexado da execução modular do agente."""
+    """Um ciclo de decisão 1-indexado da execução modular do agente.
+
+    Um step começa com o contexto disponível ao agente, reúne os outputs dos
+    módulos que participaram da decisão e termina com a resposta do ambiente à
+    ação escolhida. Portanto, uma tool call não cria vários steps para
+    planejamento, chamada e resultado: esses eventos pertencem ao mesmo step.
+
+    ``raw_output`` preserva a saída observável completa da qual
+    ``module_outputs`` foi extraído. Quando o SDK entrega planning e tool call
+    em eventos separados, o produtor serializa ambos em um único envelope para
+    auditoria, sem inventar memory ou reflection.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -104,7 +115,12 @@ class AgentDebugTrajectoryStep(BaseModel):
 
 
 class AgentDebugTrajectory(BaseModel):
-    """Execução autocontida, pronta para ``Trajectory.model_validate``."""
+    """Execução autocontida, pronta para ``Trajectory.model_validate``.
+
+    Os módulos analisáveis são identificados pelas chaves não vazias de
+    ``module_outputs`` em cada step. Os nomes dessas chaves pertencem à
+    taxonomia compartilhada com o AgentDebug-RH.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

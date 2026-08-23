@@ -35,6 +35,11 @@ contexto anterior, o planejamento e o índice do step permanecem válidos. Isso
 reduz ambiguidade entre `planning/constraint_ignorance` e
 `action/invalid_action`.
 
+Aqui, step significa o ciclo completo `contexto → planning → action → resposta
+do ambiente`. Por isso cada chamada de tool ocupa um step, e não três. O
+`raw_output` preserva planning e action no mesmo envelope, antes da separação
+em `module_outputs`.
+
 ## Pré-requisitos
 
 Organize os checkouts como diretórios irmãos:
@@ -85,7 +90,9 @@ O case passa quando:
 O diagnóstico produzido deve ser comparado com
 [`expected-diagnosis.json`](expected-diagnosis.json). Como a classificação é
 feita por LLM, divergências devem ser registradas como resultado experimental,
-não corrigidas silenciosamente no fixture.
+não corrigidas silenciosamente no fixture. O arquivo é um oráculo parcial, não
+um dump de `TrajectoryDiagnosis`; o mapeamento dos campos está documentado em
+[`docs/data-contracts/agentdebug.md`](../../../docs/data-contracts/agentdebug.md).
 
 ## Artefatos
 
