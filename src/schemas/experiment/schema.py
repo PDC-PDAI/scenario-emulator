@@ -138,6 +138,8 @@ class ExperimentProfile(BaseModel):
             raise ValueError("A frente error_recovery exige a seção error_recovery.")
         if self.front is ResearchFront.SECURITY and self.error_recovery is not None:
             raise ValueError("A frente security não deve declarar error_recovery.")
+        if self.front is not ResearchFront.SECURITY and self.pipeline.questionnaire_evaluator:
+            raise ValueError("questionnaire_evaluator só pode ser habilitado na frente security.")
         if (
             self.error_recovery is not None
             and self.error_recovery.capture_checkpoints

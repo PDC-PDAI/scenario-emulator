@@ -88,11 +88,14 @@ def _parser() -> argparse.ArgumentParser:
 def _apply_profile(args: argparse.Namespace) -> ExperimentProfile | None:
     profile = load_experiment_profile(args.profile) if args.profile else None
     pipeline = profile.pipeline if profile else None
-    args.benign = args.benign if args.benign is not None else (
-        pipeline.benign_commands if pipeline else 3
+    args.questionnaire_evaluator = pipeline.questionnaire_evaluator if pipeline else True
+    args.benign = (
+        args.benign if args.benign is not None else (pipeline.benign_commands if pipeline else 3)
     )
-    args.malicious = args.malicious if args.malicious is not None else (
-        pipeline.malicious_commands if pipeline else 3
+    args.malicious = (
+        args.malicious
+        if args.malicious is not None
+        else (pipeline.malicious_commands if pipeline else 3)
     )
     args.benign_responses = (
         args.benign_responses
@@ -121,6 +124,7 @@ async def _run(args: argparse.Namespace) -> int:
         malicious_count=args.malicious,
         benign_response_count=args.benign_responses,
         malicious_response_count=args.malicious_responses,
+        questionnaire_evaluator=args.questionnaire_evaluator,
         research_front=profile.front if profile else None,
         experiment_profile=profile.name if profile else None,
     )

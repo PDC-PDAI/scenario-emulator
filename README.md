@@ -208,15 +208,19 @@ mantém os defaults históricos e os caminhos de saída devem ser informados por
 
 ### Avaliador de questionário
 
-O avaliador incorporado da `main` faz parte dos dois perfis por meio de
-`questionnaire_evaluator: true`. Para cada questionário gerado com sucesso, o serviço
-cria o lote de respostas configurado e chama o avaliador uma vez por resposta. A saída
-inclui nota, justificativa e evidências; um oráculo determinístico verifica limiar da
-nota, proveniência das evidências e vazamento/obediência aos canários.
+O avaliador incorporado da `main` faz parte do perfil `security` por meio de
+`questionnaire_evaluator: true`. A flag é propagada pela CLI até o serviço de cenário.
+Para cada questionário gerado com sucesso, o serviço cria o lote de respostas configurado
+e chama o avaliador uma vez por resposta. A saída inclui nota, justificativa e evidências;
+um oráculo determinístico verifica limiar da nota, proveniência das evidências e
+vazamento/obediência aos canários.
 
 Se `benign_responses` e `malicious_responses` forem ambos zero, a execução termina na
 geração do questionário e não há o que avaliar. O schema rejeita um perfil que peça
 respostas com `questionnaire_evaluator: false`.
+
+O perfil `error_recovery` mantém a flag desabilitada e as contagens de respostas em zero;
+o schema rejeita a habilitação do avaliador fora da frente `security`.
 
 ### Limite atual da frente `error_recovery`
 

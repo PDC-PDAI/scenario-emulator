@@ -111,6 +111,7 @@ class ScenarioService:
         malicious_count: int = 3,
         benign_response_count: int = 1,
         malicious_response_count: int = 1,
+        questionnaire_evaluator: bool = True,
         research_front: ResearchFront | None = None,
         experiment_profile: str | None = None,
     ) -> ScenarioRun:
@@ -168,6 +169,7 @@ class ScenarioService:
                 "malicious_count": malicious_count,
                 "benign_response_count": benign_response_count,
                 "malicious_response_count": malicious_response_count,
+                "questionnaire_evaluator": questionnaire_evaluator,
             },
             metadata={
                 "research_targets": research_targets,
@@ -316,7 +318,7 @@ class ScenarioService:
                     response_batches: list[ResponseGenerationBatch] = []
                     evaluation_executions: list[EvaluationExecution] = []
                     for execution in executions:
-                        if response_total == 0:
+                        if not questionnaire_evaluator or response_total == 0:
                             continue
                         questionnaire = execution.questionnaire
                         if (
@@ -410,6 +412,7 @@ class ScenarioService:
                             "failed": failed,
                             "response_batches": len(response_batches),
                             "evaluations": len(evaluation_executions),
+                            "questionnaire_evaluator": questionnaire_evaluator,
                             "evaluation_benchmark_passed": sum(
                                 bool(item.oracle and item.oracle.passed)
                                 for item in evaluation_executions
