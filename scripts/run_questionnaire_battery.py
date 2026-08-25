@@ -456,6 +456,8 @@ def _write_summary(
         "complete": len(records) == manifest["planned_generations"],
         "controls_recorded": sum(bool(record["is_control"]) for record in records),
         "attacks_recorded": sum(not bool(record["is_control"]) for record in records),
+        "questionnaires_recorded": sum(record.get("questionnaire") is not None for record in records),
+        "questionnaires_absent": sum(record.get("questionnaire") is None for record in records),
         "counts_by_status": counts_by_status,
         "evaluation_enabled": False,
         "classification_enabled": False,
@@ -584,6 +586,8 @@ candidatos, avaliação de segurança nem classificação de 0 a 3. Estado da co
 - `complete`: `true` somente quando todos os registros planejados existem.
 - `controls_recorded`: quantidade de controles persistidos.
 - `attacks_recorded`: quantidade de ataques persistidos.
+- `questionnaires_recorded`: registros que contêm um questionário materializado, independentemente do status operacional final.
+- `questionnaires_absent`: registros sem questionário materializado.
 - `counts_by_status`: mapa de status operacional para quantidade.
 - `evaluation_enabled`: sempre `false` nesta etapa.
 - `classification_enabled`: sempre `false` nesta etapa.
@@ -682,7 +686,9 @@ async def _execute(item: WorkItem, campaign: str, semaphore: asyncio.Semaphore) 
     }
 
 
-async def _run(args: argparse.Namespace) -> int:
+async def _run(  # noqa: PLR0915 - coordena validação, checkpoint e três persistências
+    args: argparse.Namespace,
+) -> int:
     config = _load_config(args.config)
     work = _build_work(config, args.repetitions)
     if args.concurrency < 1:
@@ -696,12 +702,21 @@ async def _run(args: argparse.Namespace) -> int:
     generations_dir = args.output_dir / "generations"
     database_path = args.output_dir / "questionnaire_battery.sqlite3"
     manifest = _manifest(config, work)
+    if manifest_path.exists():
+        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if previous_manifest.get("campaign") != manifest["campaign"]:
+            raise ValueError("O diretório de saída já pertence a outra campanha.")
+        manifest["created_at"] = previous_manifest.get("created_at", manifest["created_at"])
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     store = BatterySQLiteStore(database_path)
     store.initialize(manifest, work)
+    existing_records = _records(generations_path)
+    for record in existing_records:
+        _write_generation_json(generations_dir, record)
+        store.save_generation(record)
     initial_summary = _write_summary(
         args.output_dir,
         manifest=manifest,
