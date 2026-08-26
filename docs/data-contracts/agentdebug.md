@@ -74,7 +74,8 @@ saída. Quando o streaming entrega planning e tool call em eventos separados, a
 frente A guarda um envelope JSON com todos os fragmentos observáveis. Ele não
 pode repetir apenas `action` se `planning` também foi extraído. O campo pode ser
 vazio somente quando a execução falha antes de produzir qualquer saída do
-agente.
+agente. O envelope é sempre serializado por inteiro: produtores não o truncam
+no meio, o que preserva JSON válido mesmo quando a action contém payloads grandes.
 
 ## Como os módulos analisáveis são identificados
 

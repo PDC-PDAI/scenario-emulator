@@ -8,9 +8,21 @@ de spans do Langfuse ou dos campos agregados do benchmark.
 
 from __future__ import annotations
 
+import json
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+def serialize_module_output(value: Any) -> str:
+    """Serializa um output de módulo sem produzir JSON parcial."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def raw_output_envelope(planning: str, action: Any) -> str:
+    """Reúne planning e action em um envelope JSON completo e válido."""
+    return serialize_module_output({"planning": planning, "action": action})
 
 
 class ErrorModule(str, Enum):

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.cli import _apply_profile, _run
+from src.cli import _apply_profile, _parser, _run
 from src.schemas.agent_debug.schema import ErrorModule, ErrorType
 from src.schemas.experiment.schema import ResearchFront
 from src.services.experiment.profile import load_experiment_profile
@@ -66,6 +66,44 @@ def test_cli_profile_supplies_defaults_and_explicit_flags_win():
     assert args.questionnaire_evaluator is True
     assert args.output == Path("outputs/security/scenario.json")
     assert args.trajectories_dir == Path("outputs/security/trajectories")
+
+
+def test_cli_can_explicitly_disable_questionnaire_evaluator():
+    args = _parser().parse_args(
+        [
+            "run",
+            "--brief",
+            "Backend Python",
+            "--profile",
+            str(ROOT / "configs/fronts/security.yaml"),
+            "--no-questionnaire-evaluator",
+            "--benign-responses",
+            "0",
+            "--malicious-responses",
+            "0",
+        ]
+    )
+
+    _apply_profile(args)
+
+    assert args.questionnaire_evaluator is False
+
+
+def test_cli_rejects_response_override_when_profile_disables_evaluator():
+    args = _parser().parse_args(
+        [
+            "run",
+            "--brief",
+            "Backend Python",
+            "--profile",
+            str(ROOT / "configs/fronts/error_recovery.yaml"),
+            "--benign-responses",
+            "3",
+        ]
+    )
+
+    with pytest.raises(ValidationError, match="devem ser zero"):
+        _apply_profile(args)
 
 
 @pytest.mark.asyncio

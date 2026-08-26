@@ -9,7 +9,7 @@ import structlog
 from src.agents.model import configured_model_identifier
 from src.schemas.benchmark.schema import BenchmarkRecord
 from src.schemas.evaluation.schema import EvaluationExecution, EvaluationStatus
-from src.schemas.experiment.schema import ResearchFront
+from src.schemas.experiment.schema import PipelineProfile, ResearchFront, validate_front_pipeline
 from src.schemas.observability.schema import NodeLocus, TraceNode
 from src.schemas.questionnaire.schema import ExecutionStatus, QuestionnaireExecution
 from src.schemas.response.schema import ResponseBatchStatus, ResponseGenerationBatch
@@ -27,9 +27,6 @@ from src.services.observability.service import observation, trace_attributes
 from src.services.questionnaire.service import QuestionnaireService
 from src.services.response.service import ResponseGenerationService
 from src.services.submission.service import SubmissionService
-
-_MAX_EVALUATIONS_PER_SCENARIO = 200
-_MAX_RESPONSES_PER_QUESTIONNAIRE = 20
 
 logger = structlog.get_logger(__name__)
 
@@ -116,20 +113,15 @@ class ScenarioService:
         experiment_profile: str | None = None,
     ) -> ScenarioRun:
         pipeline_started = time.perf_counter()
+        pipeline = PipelineProfile(
+            benign_commands=benign_count,
+            malicious_commands=malicious_count,
+            benign_responses=benign_response_count,
+            malicious_responses=malicious_response_count,
+            questionnaire_evaluator=questionnaire_evaluator,
+        )
+        validate_front_pipeline(research_front, pipeline)
         response_total = benign_response_count + malicious_response_count
-        if (
-            benign_response_count < 0
-            or malicious_response_count < 0
-            or response_total > _MAX_RESPONSES_PER_QUESTIONNAIRE
-        ):
-            raise ValueError(
-                "Contagens de respostas devem ser não negativas e somar no máximo "
-                f"{_MAX_RESPONSES_PER_QUESTIONNAIRE}."
-            )
-        if (benign_count + malicious_count) * response_total > _MAX_EVALUATIONS_PER_SCENARIO:
-            raise ValueError(
-                f"O cenário aceita no máximo {_MAX_EVALUATIONS_PER_SCENARIO} avaliações potenciais."
-            )
         scenario_id = f"scenario-{uuid.uuid4()}"
         research_targets = _research_targets(research_front)
         experiment_context = _experiment_provenance(research_front, experiment_profile)

@@ -125,3 +125,25 @@ def test_terminal_failure_becomes_analyzable_step(monkeypatch):
     raw_output = json.loads(step.raw_output)
     assert raw_output["planning"] == step.module_outputs["planning"]
     assert raw_output["action"] == json.loads(step.module_outputs["action"])
+
+
+@pytest.mark.asyncio
+async def test_large_actions_keep_raw_output_as_complete_json(monkeypatch):
+    monkeypatch.setattr(react, "get_langfuse_client", lambda: None)
+    streamer = ReactSpanStreamer(node_prefix="scenario.questionnaire.001")
+    large_value = "x" * (react._OBSERVATION_LIMIT * 2)
+    tool = _tool("submit_large_payload", args={"content": large_value})
+
+    await streamer.handle(RunContentEvent(reasoning_content="Enviar o payload completo."))
+    await streamer.handle(ToolCallStartedEvent(tool=tool))
+    streamer.record_terminal_failure(
+        code="MISSING_TERMINAL_TOOL_CALL",
+        message="Nenhuma tool terminal foi chamada.",
+        final_output={"content": large_value},
+    )
+
+    for step in streamer.trajectory_steps:
+        raw_output = json.loads(step.raw_output)
+        assert raw_output["planning"] == step.module_outputs["planning"]
+        assert raw_output["action"] == json.loads(step.module_outputs["action"])
+        assert len(step.raw_output) > react._OBSERVATION_LIMIT

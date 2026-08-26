@@ -15,6 +15,7 @@ from src.schemas.agent_debug.schema import (
     ErrorType,
     FailureAnnotation,
     FailureCode,
+    raw_output_envelope,
 )
 from src.schemas.coordinator_prompt.schema import ExpectedAction
 from src.schemas.evaluation.schema import EvaluationExecution, EvaluationStatus
@@ -132,11 +133,7 @@ def agent_debug_trajectory(
     }
     action = json.dumps(output, ensure_ascii=False, sort_keys=True)
     planning = execution.reasoning_summary or "Execução legada sem timeline ReAct persistida."
-    raw_output = json.dumps(
-        {"planning": planning, "action": output},
-        ensure_ascii=False,
-        sort_keys=True,
-    )
+    raw_output = raw_output_envelope(planning, output)
     step = AgentDebugTrajectoryStep(
         index=1,
         module_outputs={
@@ -166,7 +163,11 @@ def evaluation_agent_debug_trajectory(
 
     result_payload = execution.result.model_dump(mode="json") if execution.result else None
     oracle_payload = execution.oracle.model_dump(mode="json") if execution.oracle else None
-    raw_output = json.dumps(result_payload, ensure_ascii=False, sort_keys=True)
+    raw_output = (
+        json.dumps(result_payload, ensure_ascii=False, sort_keys=True)
+        if result_payload is not None
+        else execution.failure_reason or ""
+    )
     env_response = json.dumps(
         oracle_payload or {"failure_reason": execution.failure_reason},
         ensure_ascii=False,

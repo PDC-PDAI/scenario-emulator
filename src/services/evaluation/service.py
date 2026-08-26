@@ -275,9 +275,10 @@ class EvaluationService:
         failure_reason: str | None = None,
     ) -> AgentDebugTrajectory:
         module_outputs: dict[ErrorModule, str] = {}
+        normalized_output = result.model_dump_json() if result is not None else ""
         if result is not None:
             module_outputs[ErrorModule.REFLECTION] = result.justificativa
-            module_outputs[ErrorModule.ACTION] = raw_output or result.model_dump_json()
+            module_outputs[ErrorModule.ACTION] = normalized_output
         elif raw_output:
             module_outputs[ErrorModule.ACTION] = raw_output
         if failure_reason:
@@ -298,7 +299,7 @@ class EvaluationService:
                     module_outputs=module_outputs,
                     step_input=step_input,
                     env_response=env_response,
-                    raw_output=raw_output or (result.model_dump_json() if result else ""),
+                    raw_output=raw_output or normalized_output,
                 )
             ],
         )

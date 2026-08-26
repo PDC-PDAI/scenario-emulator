@@ -267,8 +267,8 @@ async def test_disabled_questionnaire_evaluator_skips_response_campaign():
         "Backend Python",
         benign_count=1,
         malicious_count=1,
-        benign_response_count=1,
-        malicious_response_count=1,
+        benign_response_count=0,
+        malicious_response_count=0,
         questionnaire_evaluator=False,
         research_front=ResearchFront.ERROR_RECOVERY,
         experiment_profile="error_recovery",
@@ -280,6 +280,37 @@ async def test_disabled_questionnaire_evaluator_skips_response_campaign():
     assert all(
         record.task_type == "questionnaire_generation" for record in scenario.benchmark_records
     )
+
+
+@pytest.mark.asyncio
+async def test_direct_call_rejects_responses_when_evaluator_is_disabled():
+    service = ScenarioService()
+
+    with pytest.raises(ValueError, match="devem ser zero"):
+        await service.run(
+            "Backend Python",
+            benign_count=1,
+            malicious_count=1,
+            benign_response_count=1,
+            malicious_response_count=0,
+            questionnaire_evaluator=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_direct_call_rejects_evaluator_outside_security_front():
+    service = ScenarioService()
+
+    with pytest.raises(ValueError, match="só pode ser habilitado na frente security"):
+        await service.run(
+            "Backend Python",
+            benign_count=1,
+            malicious_count=1,
+            benign_response_count=1,
+            malicious_response_count=0,
+            questionnaire_evaluator=True,
+            research_front=ResearchFront.ERROR_RECOVERY,
+        )
 
 
 @pytest.mark.asyncio

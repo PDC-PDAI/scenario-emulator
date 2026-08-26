@@ -16,6 +16,22 @@ class ResearchFront(str, Enum):
     ERROR_RECOVERY = "error_recovery"
 
 
+class ResearchCapability(str, Enum):
+    QUESTIONNAIRE_EVALUATOR = "questionnaire_evaluator"
+    ERROR_RECOVERY = "error_recovery"
+
+
+_FRONT_CAPABILITIES: dict[ResearchFront, frozenset[ResearchCapability]] = {
+    ResearchFront.SECURITY: frozenset({ResearchCapability.QUESTIONNAIRE_EVALUATOR}),
+    ResearchFront.ERROR_RECOVERY: frozenset({ResearchCapability.ERROR_RECOVERY}),
+}
+
+
+def research_front_supports(front: ResearchFront, capability: ResearchCapability) -> bool:
+    """Informa as capacidades habilitadas por uma frente de pesquisa."""
+    return capability in _FRONT_CAPABILITIES[front]
+
+
 class PipelineProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -41,6 +57,16 @@ class PipelineProfile(BaseModel):
                 "devem ser zero."
             )
         return self
+
+
+def validate_front_pipeline(front: ResearchFront | None, pipeline: PipelineProfile) -> None:
+    """Valida invariantes da pipeline que também se aplicam a chamadores diretos."""
+    if (
+        front is not None
+        and pipeline.questionnaire_evaluator
+        and not research_front_supports(front, ResearchCapability.QUESTIONNAIRE_EVALUATOR)
+    ):
+        raise ValueError("questionnaire_evaluator só pode ser habilitado na frente security.")
 
 
 class ArtifactProfile(BaseModel):
@@ -134,12 +160,14 @@ class ExperimentProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_front(self) -> ExperimentProfile:
-        if self.front is ResearchFront.ERROR_RECOVERY and self.error_recovery is None:
+        supports_error_recovery = research_front_supports(
+            self.front, ResearchCapability.ERROR_RECOVERY
+        )
+        if supports_error_recovery and self.error_recovery is None:
             raise ValueError("A frente error_recovery exige a seção error_recovery.")
-        if self.front is ResearchFront.SECURITY and self.error_recovery is not None:
+        if not supports_error_recovery and self.error_recovery is not None:
             raise ValueError("A frente security não deve declarar error_recovery.")
-        if self.front is not ResearchFront.SECURITY and self.pipeline.questionnaire_evaluator:
-            raise ValueError("questionnaire_evaluator só pode ser habilitado na frente security.")
+        validate_front_pipeline(self.front, self.pipeline)
         if (
             self.error_recovery is not None
             and self.error_recovery.capture_checkpoints

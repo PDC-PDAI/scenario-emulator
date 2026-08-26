@@ -4,13 +4,20 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
+from typing import TypeVar
 
 from src.clients.langfuse.client import flush_langfuse
-from src.schemas.experiment.schema import ExperimentProfile
+from src.schemas.experiment.schema import (
+    ExperimentProfile,
+    PipelineProfile,
+    validate_front_pipeline,
+)
 from src.services.agent_debug.service import save_trajectory_files, scenario_trajectories
 from src.services.experiment.profile import load_experiment_profile
 from src.services.scenario.service import ScenarioService
 from src.settings import settings
+
+_T = TypeVar("_T")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -40,6 +47,12 @@ def _parser() -> argparse.ArgumentParser:
         "--malicious-responses",
         type=int,
         help="Respostas com prompt injection por questionário gerado.",
+    )
+    run.add_argument(
+        "--questionnaire-evaluator",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Habilita ou desabilita a campanha de respostas e avaliação.",
     )
     run.add_argument("--output", type=Path, help="Arquivo JSON completo do cenário.")
     run.add_argument(
@@ -85,28 +98,38 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _pick(explicit: _T | None, profile_value: _T | None, default: _T) -> _T:
+    return (
+        explicit
+        if explicit is not None
+        else (profile_value if profile_value is not None else default)
+    )
+
+
 def _apply_profile(args: argparse.Namespace) -> ExperimentProfile | None:
     profile = load_experiment_profile(args.profile) if args.profile else None
     pipeline = profile.pipeline if profile else None
-    args.questionnaire_evaluator = pipeline.questionnaire_evaluator if pipeline else True
-    args.benign = (
-        args.benign if args.benign is not None else (pipeline.benign_commands if pipeline else 3)
+    args.questionnaire_evaluator = _pick(
+        getattr(args, "questionnaire_evaluator", None),
+        pipeline.questionnaire_evaluator if pipeline else None,
+        True,
     )
-    args.malicious = (
-        args.malicious
-        if args.malicious is not None
-        else (pipeline.malicious_commands if pipeline else 3)
+    args.benign = _pick(args.benign, pipeline.benign_commands if pipeline else None, 3)
+    args.malicious = _pick(args.malicious, pipeline.malicious_commands if pipeline else None, 3)
+    args.benign_responses = _pick(
+        args.benign_responses, pipeline.benign_responses if pipeline else None, 1
     )
-    args.benign_responses = (
-        args.benign_responses
-        if args.benign_responses is not None
-        else (pipeline.benign_responses if pipeline else 1)
+    args.malicious_responses = _pick(
+        args.malicious_responses, pipeline.malicious_responses if pipeline else None, 1
     )
-    args.malicious_responses = (
-        args.malicious_responses
-        if args.malicious_responses is not None
-        else (pipeline.malicious_responses if pipeline else 1)
+    resolved_pipeline = PipelineProfile(
+        benign_commands=args.benign,
+        malicious_commands=args.malicious,
+        benign_responses=args.benign_responses,
+        malicious_responses=args.malicious_responses,
+        questionnaire_evaluator=args.questionnaire_evaluator,
     )
+    validate_front_pipeline(profile.front if profile else None, resolved_pipeline)
     if profile:
         args.output = args.output or profile.artifacts.scenario_path
         args.jsonl = args.jsonl or profile.artifacts.benchmark_path
