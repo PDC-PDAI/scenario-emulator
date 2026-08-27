@@ -297,10 +297,26 @@ async def test_benchmark_jsonl_and_openapi_are_exposed(tmp_path):
             assert exported.headers["content-type"].startswith("application/x-ndjson")
             assert json.loads(exported.text)["trajectory_id"] == "trajectory-1"
 
+            debug_export = await client.get("/api/v1/scenarios/scenario-1/agent-debug.jsonl")
+            assert debug_export.status_code == status.HTTP_200_OK
+            trajectory = json.loads(debug_export.text)
+            assert trajectory["trajectory_id"] == "trajectory-1"
+            assert trajectory["environment"] == ("scenario-emulator/front-a/questionnaire-agent")
+            assert trajectory["success"] is True
+            assert trajectory["steps"][0]["index"] == 1
+            assert set(trajectory["steps"][0]) == {
+                "index",
+                "module_outputs",
+                "step_input",
+                "env_response",
+                "raw_output",
+            }
+
             openapi = await client.get("/openapi.json")
             assert openapi.status_code == status.HTTP_200_OK
             assert (
                 "/api/v1/questionnaires/{questionnaire_id}/submissions" in openapi.json()["paths"]
             )
+            assert "/api/v1/scenarios/{scenario_id}/agent-debug.jsonl" in openapi.json()["paths"]
     finally:
         repository.close()

@@ -35,6 +35,7 @@ def observation(
     node: TraceNode,
     *,
     as_type: str = "span",
+    trace_id: str | None = None,
     input: Any = None,
     output: Any = None,
     model: str | None = None,
@@ -57,13 +58,20 @@ def observation(
         kwargs["model"] = model
     if prompt is not None:
         kwargs["prompt"] = prompt
+    if trace_id is not None:
+        kwargs["trace_context"] = {"trace_id": trace_id}
     with client.start_as_current_observation(**kwargs) as span:
         yield span
 
 
 @contextmanager
 def trace_attributes(
-    *, session_id: str, tags: list[str], metadata: dict[str, Any]
+    *,
+    session_id: str,
+    tags: list[str],
+    metadata: dict[str, Any],
+    trace_name: str | None = None,
+    environment: str | None = None,
 ) -> Iterator[None]:
     if get_langfuse_client() is None:
         yield
@@ -74,8 +82,16 @@ def trace_attributes(
         session_id=session_id,
         tags=tags,
         metadata=redact_for_trace(metadata),
+        trace_name=trace_name,
+        environment=environment,
     ):
         yield
+
+
+def create_langfuse_trace_id(*, seed: str) -> str | None:
+    """Cria um trace id estável sem tornar o Langfuse obrigatório no runtime."""
+    client = get_langfuse_client()
+    return client.create_trace_id(seed=seed) if client is not None else None
 
 
 def current_trace_id() -> str | None:

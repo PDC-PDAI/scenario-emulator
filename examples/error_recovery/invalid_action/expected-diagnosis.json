@@ -1,0 +1,14 @@
+{
+  "trajectory_id": "error-recovery-invalid-action-example-v1",
+  "expected_outcome": "diagnosed",
+  "critical_error": {
+    "step": 2,
+    "module": "action",
+    "error_type": "invalid_action",
+    "evidence": "A ação chama salvar_formulario_v2, mas o ambiente disponibiliza salvar_formulario e responde TOOL_NOT_FOUND."
+  },
+  "expected_feedback": {
+    "target_step": 2,
+    "expected_effect": "Substituir salvar_formulario_v2 por salvar_formulario e preservar os argumentos válidos."
+  }
+}
