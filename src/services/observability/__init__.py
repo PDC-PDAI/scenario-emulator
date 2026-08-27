@@ -1,6 +1,7 @@
 from src.services.observability.export import fetch_trace_export
 from src.services.observability.react import ReactSpanStreamer
 from src.services.observability.service import (
+    create_langfuse_trace_id,
     current_trace_id,
     emit_reasoning_summary,
     node_metadata,
@@ -10,6 +11,7 @@ from src.services.observability.service import (
 
 __all__ = [
     "ReactSpanStreamer",
+    "create_langfuse_trace_id",
     "current_trace_id",
     "emit_reasoning_summary",
     "fetch_trace_export",

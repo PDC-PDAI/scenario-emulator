@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 
 from src.clients.langfuse.client import flush_langfuse
+from src.schemas.experiment.schema import ExperimentProfile
+from src.services.agent_debug.service import save_trajectory_files, scenario_trajectories
+from src.services.experiment.profile import load_experiment_profile
 from src.services.scenario.service import ScenarioService
 from src.settings import settings
 
@@ -21,18 +24,21 @@ def _parser() -> argparse.ArgumentParser:
     source = run.add_mutually_exclusive_group(required=True)
     source.add_argument("--brief", help="Briefing textual da vaga.")
     source.add_argument("--brief-file", type=Path, help="Arquivo UTF-8 com o briefing.")
-    run.add_argument("--benign", type=int, default=3, help="Quantidade de comandos benignos.")
-    run.add_argument("--malicious", type=int, default=3, help="Quantidade de comandos malignos.")
+    run.add_argument(
+        "--profile",
+        type=Path,
+        help="Perfil YAML da frente; flags explícitas sobrescrevem seus valores.",
+    )
+    run.add_argument("--benign", type=int, help="Quantidade de comandos benignos.")
+    run.add_argument("--malicious", type=int, help="Quantidade de comandos malignos.")
     run.add_argument(
         "--benign-responses",
         type=int,
-        default=1,
         help="Respostas benignas por questionário gerado.",
     )
     run.add_argument(
         "--malicious-responses",
         type=int,
-        default=1,
         help="Respostas com prompt injection por questionário gerado.",
     )
     run.add_argument("--output", type=Path, help="Arquivo JSON completo do cenário.")
@@ -41,8 +47,24 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="Arquivo JSONL opcional com um BenchmarkRecord por trajetória.",
     )
+    run.add_argument(
+        "--agent-debug-jsonl",
+        type=Path,
+        help="Arquivo JSONL no contrato Trajectory consumido pelo AgentDebug-RH.",
+    )
+    run.add_argument(
+        "--trajectories-dir",
+        type=Path,
+        help="Diretório onde será salvo um JSON por trajetória executada.",
+    )
 
     commands.add_parser("sync-prompts", help="Sincroniza os prompts locais com Langfuse.")
+
+    validate_profile = commands.add_parser(
+        "validate-profile",
+        help="Valida e imprime a forma normalizada de um perfil YAML.",
+    )
+    validate_profile.add_argument("profile", type=Path, help="Arquivo YAML do perfil.")
 
     export = commands.add_parser(
         "export-trace",
@@ -63,7 +85,38 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_profile(args: argparse.Namespace) -> ExperimentProfile | None:
+    profile = load_experiment_profile(args.profile) if args.profile else None
+    pipeline = profile.pipeline if profile else None
+    args.questionnaire_evaluator = pipeline.questionnaire_evaluator if pipeline else True
+    args.benign = (
+        args.benign if args.benign is not None else (pipeline.benign_commands if pipeline else 3)
+    )
+    args.malicious = (
+        args.malicious
+        if args.malicious is not None
+        else (pipeline.malicious_commands if pipeline else 3)
+    )
+    args.benign_responses = (
+        args.benign_responses
+        if args.benign_responses is not None
+        else (pipeline.benign_responses if pipeline else 1)
+    )
+    args.malicious_responses = (
+        args.malicious_responses
+        if args.malicious_responses is not None
+        else (pipeline.malicious_responses if pipeline else 1)
+    )
+    if profile:
+        args.output = args.output or profile.artifacts.scenario_path
+        args.jsonl = args.jsonl or profile.artifacts.benchmark_path
+        args.agent_debug_jsonl = args.agent_debug_jsonl or profile.artifacts.agent_debug_path
+        args.trajectories_dir = args.trajectories_dir or profile.artifacts.trajectory_path
+    return profile
+
+
 async def _run(args: argparse.Namespace) -> int:
+    profile: ExperimentProfile | None = args.experiment_profile
     brief = args.brief or args.brief_file.read_text(encoding="utf-8")
     result = await ScenarioService().run(
         brief,
@@ -71,7 +124,12 @@ async def _run(args: argparse.Namespace) -> int:
         malicious_count=args.malicious,
         benign_response_count=args.benign_responses,
         malicious_response_count=args.malicious_responses,
+        questionnaire_evaluator=args.questionnaire_evaluator,
+        research_front=profile.front if profile else None,
+        experiment_profile=profile.name if profile else None,
     )
+    if profile:
+        print(f"Perfil: {profile.name} (frente={profile.front.value})")
     rendered = result.model_dump_json(indent=2, by_alias=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -84,6 +142,16 @@ async def _run(args: argparse.Namespace) -> int:
         lines = [record.model_dump_json(by_alias=True) for record in result.benchmark_records]
         args.jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"Benchmark JSONL salvo em {args.jsonl}")
+    if args.agent_debug_jsonl:
+        args.agent_debug_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        trajectories = scenario_trajectories(result)
+        lines = [trajectory.model_dump_json() for trajectory in trajectories]
+        args.agent_debug_jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"Trajetórias AgentDebug-RH salvas em {args.agent_debug_jsonl}")
+    if args.trajectories_dir:
+        trajectories = scenario_trajectories(result)
+        paths = save_trajectory_files(trajectories, args.trajectories_dir)
+        print(f"{len(paths)} trajetórias salvas em {args.trajectories_dir}")
     passed = sum(item.benchmark_passed for item in result.executions)
     print(f"Resultado: {passed}/{len(result.executions)} trajetórias passaram no oráculo.")
     evaluation_passed = sum(
@@ -126,16 +194,32 @@ def _serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _validate_profile(args: argparse.Namespace) -> int:
+    profile = load_experiment_profile(args.profile)
+    print(profile.model_dump_json(indent=2))
+    return 0
+
+
 def main() -> int:
-    args = _parser().parse_args()
+    parser = _parser()
+    args = parser.parse_args()
     if args.command == "sync-prompts":
         from scripts.sync_langfuse_prompts import sync_prompts  # noqa: PLC0415
 
         return sync_prompts()
+    if args.command == "validate-profile":
+        try:
+            return _validate_profile(args)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.command == "export-trace":
         return _export_trace(args)
     if args.command == "serve":
         return _serve(args)
+    try:
+        args.experiment_profile = _apply_profile(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     try:
         return asyncio.run(_run(args))
     finally:

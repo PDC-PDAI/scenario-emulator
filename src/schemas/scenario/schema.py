@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.schemas.benchmark.schema import BenchmarkRecord
 from src.schemas.coordinator_prompt.schema import CoordinatorPromptBatch
 from src.schemas.evaluation.schema import EvaluationExecution
+from src.schemas.experiment.schema import ResearchFront
 from src.schemas.job_description.schema import JobDescription
 from src.schemas.questionnaire.schema import QuestionnaireExecution
 from src.schemas.response.schema import ResponseGenerationBatch
@@ -21,6 +22,8 @@ class ScenarioRun(BaseModel):
     research_targets: list[str] = Field(
         default_factory=lambda: ["AgentDebug-RH", "RecruitSecBench"]
     )
+    research_front: ResearchFront | None = None
+    experiment_profile: str | None = None
     job_description: JobDescription
     coordinator_prompts: CoordinatorPromptBatch
     executions: list[QuestionnaireExecution]

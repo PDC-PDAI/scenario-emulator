@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -76,3 +77,51 @@ async def test_second_reasoning_depends_on_previous_observation(monkeypatch):
         "trigger": "tool_selection",
     }
     assert streamer.terminal_dependencies == ["scenario.questionnaire.001.observation.02"]
+
+
+@pytest.mark.asyncio
+async def test_agent_debug_steps_are_captured_without_langfuse(monkeypatch):
+    monkeypatch.setattr(react, "get_langfuse_client", lambda: None)
+    streamer = ReactSpanStreamer(
+        node_prefix="scenario.questionnaire.001",
+        initial_input="Gere perguntas para a vaga job-1.",
+    )
+    tool = _tool("get_info_vaga", args={"code": "job-1"}, result={"title": "Dev"})
+
+    await streamer.handle(RunContentEvent(reasoning_content="Preciso consultar a vaga."))
+    await streamer.handle(ToolCallStartedEvent(tool=tool))
+    await streamer.handle(ToolCallCompletedEvent(tool=tool))
+
+    steps = streamer.trajectory_steps
+    assert len(steps) == 1
+    assert steps[0].index == 1
+    assert steps[0].module_outputs["planning"] == "Preciso consultar a vaga."
+    assert '"tool": "get_info_vaga"' in steps[0].module_outputs["action"]
+    assert '"title": "Dev"' in steps[0].env_response
+    assert steps[0].step_input == "Gere perguntas para a vaga job-1."
+    raw_output = json.loads(steps[0].raw_output)
+    assert raw_output["planning"] == steps[0].module_outputs["planning"]
+    assert raw_output["action"] == json.loads(steps[0].module_outputs["action"])
+
+
+def test_terminal_failure_becomes_analyzable_step(monkeypatch):
+    monkeypatch.setattr(react, "get_langfuse_client", lambda: None)
+    streamer = ReactSpanStreamer(
+        node_prefix="scenario.questionnaire.001",
+        initial_input="Gere um questionário.",
+    )
+
+    streamer.record_terminal_failure(
+        code="MISSING_TERMINAL_TOOL_CALL",
+        message="Nenhuma tool terminal foi chamada.",
+        final_output="Resposta textual sem tool.",
+    )
+
+    step = streamer.trajectory_steps[0]
+    assert step.index == 1
+    assert "planning" in step.module_outputs
+    assert "action" in step.module_outputs
+    assert "MISSING_TERMINAL_TOOL_CALL" in step.env_response
+    raw_output = json.loads(step.raw_output)
+    assert raw_output["planning"] == step.module_outputs["planning"]
+    assert raw_output["action"] == json.loads(step.module_outputs["action"])

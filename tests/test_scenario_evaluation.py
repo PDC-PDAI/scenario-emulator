@@ -16,6 +16,7 @@ from src.schemas.evaluation.schema import (
     NotaFormulario,
     OracleResult,
 )
+from src.schemas.experiment.schema import ResearchFront
 from src.schemas.job_description.schema import JobDescription
 from src.schemas.questionnaire.schema import (
     ExecutionStatus,
@@ -30,6 +31,7 @@ from src.schemas.response.schema import (
     ResponseGenerationBatch,
     ResponseIntent,
 )
+from src.services.agent_debug.service import scenario_trajectories
 from src.services.scenario.service import ScenarioService
 
 _EXPECTED_EVALUATIONS = 2
@@ -80,7 +82,15 @@ class FakeCoordinatorService:
 
 
 class FakeQuestionnaireService:
-    async def execute(self, job, prompt, *, scenario_id):
+    async def execute(
+        self,
+        job,
+        prompt,
+        *,
+        scenario_id,
+        experiment_tags=None,
+        experiment_metadata=None,
+    ):
         questionnaire = None
         status = ExecutionStatus.REFUSED
         if prompt.intent is PromptIntent.BENIGN:
@@ -193,6 +203,7 @@ async def test_only_successful_questionnaires_receive_response_campaign():
         malicious_count=1,
         benign_response_count=1,
         malicious_response_count=1,
+        questionnaire_evaluator=True,
     )
 
     assert response_service.calls == 1
@@ -205,6 +216,13 @@ async def test_only_successful_questionnaires_receive_response_campaign():
     assert task_types.count("questionnaire_generation") == _EXPECTED_EVALUATIONS
     assert task_types.count("response_generation") == 1
     assert task_types.count("questionnaire_evaluation") == _EXPECTED_EVALUATIONS
+    trajectories = scenario_trajectories(scenario)
+    assert len(trajectories) == 3 + _EXPECTED_EVALUATIONS
+    assert sum(item.environment.endswith("response-case-generator") for item in trajectories) == 1
+    assert (
+        sum(item.environment.endswith("questionnaire-response-evaluator") for item in trajectories)
+        == _EXPECTED_EVALUATIONS
+    )
 
 
 @pytest.mark.asyncio
@@ -232,3 +250,67 @@ async def test_zero_response_counts_keep_generation_only():
     assert all(
         record.task_type == "questionnaire_generation" for record in scenario.benchmark_records
     )
+
+
+@pytest.mark.asyncio
+async def test_disabled_questionnaire_evaluator_skips_response_campaign():
+    response_service = FakeResponseService()
+    service = ScenarioService(
+        job_service=FakeJobService(),  # type: ignore[arg-type]
+        coordinator_service=FakeCoordinatorService(),  # type: ignore[arg-type]
+        questionnaire_service=FakeQuestionnaireService(),  # type: ignore[arg-type]
+        response_service=response_service,  # type: ignore[arg-type]
+        evaluation_service=FakeEvaluationService(),  # type: ignore[arg-type]
+    )
+
+    scenario = await service.run(
+        "Backend Python",
+        benign_count=1,
+        malicious_count=1,
+        benign_response_count=1,
+        malicious_response_count=1,
+        questionnaire_evaluator=False,
+        research_front=ResearchFront.ERROR_RECOVERY,
+        experiment_profile="error_recovery",
+    )
+
+    assert response_service.calls == 0
+    assert scenario.response_batches == []
+    assert scenario.evaluation_executions == []
+    assert all(
+        record.task_type == "questionnaire_generation" for record in scenario.benchmark_records
+    )
+
+
+@pytest.mark.asyncio
+async def test_profile_front_is_persisted_in_scenario_and_benchmark_provenance():
+    service = ScenarioService(
+        job_service=FakeJobService(),  # type: ignore[arg-type]
+        coordinator_service=FakeCoordinatorService(),  # type: ignore[arg-type]
+        questionnaire_service=FakeQuestionnaireService(),  # type: ignore[arg-type]
+        response_service=FakeResponseService(),  # type: ignore[arg-type]
+        evaluation_service=FakeEvaluationService(),  # type: ignore[arg-type]
+    )
+
+    scenario = await service.run(
+        "Backend Python",
+        benign_count=1,
+        malicious_count=1,
+        benign_response_count=1,
+        malicious_response_count=1,
+        questionnaire_evaluator=True,
+        research_front=ResearchFront.SECURITY,
+        experiment_profile="security",
+    )
+
+    assert scenario.research_front is ResearchFront.SECURITY
+    assert scenario.experiment_profile == "security"
+    assert scenario.research_targets == ["RecruitSecBench"]
+    assert all(
+        record.provenance["research_front"] == "security" for record in scenario.benchmark_records
+    )
+    assert all(
+        record.provenance["experiment_profile"] == "security"
+        for record in scenario.benchmark_records
+    )
+    assert len(scenario.evaluation_executions) == _EXPECTED_EVALUATIONS
