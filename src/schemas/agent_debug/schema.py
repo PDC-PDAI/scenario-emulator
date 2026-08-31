@@ -9,6 +9,7 @@ de spans do Langfuse ou dos campos agregados do benchmark.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -91,6 +92,30 @@ def is_valid_error_pair(module: ErrorModule, error_type: ErrorType) -> bool:
     return error_type in _VALID_ERROR_TYPES[module]
 
 
+class ChatToolCall(BaseModel):
+    """Uma tool call emitida em uma mensagem ``assistant`` da conversa crua."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    name: str | None = None
+    arguments: Any = None
+
+
+class ChatMessage(BaseModel):
+    """Uma mensagem crua da conversa com o modelo (system/user/assistant/tool)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    content: Any = None
+    tool_calls: list[ChatToolCall] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
+    reasoning: str | None = None
+    error: bool | None = None
+
+
 class AgentDebugTrajectoryStep(BaseModel):
     """Um checkpoint 1-indexado da execução modular do agente."""
 
@@ -113,6 +138,10 @@ class AgentDebugTrajectory(BaseModel):
     environment: str
     success: bool = False
     steps: list[AgentDebugTrajectoryStep] = Field(default_factory=list)
+    # Conversa crua do run, na ordem exata enviada ao modelo. O AgentDebug-RH
+    # ignora o campo; a Frente C usa como prefixo verbatim do re-rollout.
+    # None = execução legada/adaptada sem captura nativa.
+    messages: list[ChatMessage] | None = None
 
     @model_validator(mode="after")
     def validate_step_indices(self) -> AgentDebugTrajectory:

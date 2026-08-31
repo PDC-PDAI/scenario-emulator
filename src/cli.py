@@ -141,7 +141,7 @@ async def _run(args: argparse.Namespace) -> int:
     if args.agent_debug_jsonl:
         args.agent_debug_jsonl.parent.mkdir(parents=True, exist_ok=True)
         trajectories = scenario_trajectories(result)
-        lines = [trajectory.model_dump_json() for trajectory in trajectories]
+        lines = [trajectory.model_dump_json(exclude_none=True) for trajectory in trajectories]
         args.agent_debug_jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"Trajetórias AgentDebug-RH salvas em {args.agent_debug_jsonl}")
     if args.trajectories_dir:

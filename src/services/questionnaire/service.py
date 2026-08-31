@@ -13,7 +13,7 @@ from agno.tools.function import Function
 from pydantic import ValidationError
 
 from src.agents.model import build_model, get_model_identifier
-from src.agents.utils import extract_usage, parse_model_output
+from src.agents.utils import clean_agent_messages, extract_usage, parse_model_output
 from src.prompts.manager import resolve_prompt
 from src.prompts.raw_prompts import QUESTIONNAIRE_SYSTEM_PROMPT, QUESTIONNAIRE_USER_PROMPT
 from src.schemas.agent_debug.schema import AgentDebugTrajectory
@@ -300,6 +300,7 @@ class QuestionnaireService:
                 environment="scenario-emulator/front-a/questionnaire-agent",
                 success=benchmark_passed,
                 steps=streamer.trajectory_steps,
+                messages=clean_agent_messages(final_output),
             )
             result = QuestionnaireExecution(
                 trajectory_id=trajectory_id,
@@ -336,7 +337,11 @@ class QuestionnaireService:
                         "question_count": len(result.questionnaire.questions)
                         if result.questionnaire
                         else 0,
-                        "agent_debug_trajectory": trajectory,
+                        # A conversa crua já vive no arquivo exportado; o span não
+                        # duplica prompts/observações inteiros no Langfuse.
+                        "agent_debug_trajectory": trajectory.model_dump(
+                            mode="json", exclude={"messages"}
+                        ),
                         "failure_annotation": result.failure_annotation,
                     }
                 ),

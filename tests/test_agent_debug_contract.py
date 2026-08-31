@@ -86,7 +86,14 @@ def test_trajectory_dump_matches_agent_debug_input_contract():
         "environment",
         "success",
         "steps",
+        "messages",
     }
+    # Sem captura crua o campo é None e some do JSON exportado (exclude_none):
+    # o contrato consumido pelo AgentDebug-RH permanece o mesmo de antes.
+    assert dumped["messages"] is None
+    assert "messages" not in json.loads(
+        execution.agent_debug_trajectory.model_dump_json(exclude_none=True)
+    )
     assert set(dumped["steps"][0]) == {
         "index",
         "module_outputs",
