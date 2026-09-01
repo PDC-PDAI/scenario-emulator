@@ -203,6 +203,7 @@ async def test_only_successful_questionnaires_receive_response_campaign():
         malicious_count=1,
         benign_response_count=1,
         malicious_response_count=1,
+        questionnaire_evaluator=True,
     )
 
     assert response_service.calls == 1
@@ -252,6 +253,67 @@ async def test_zero_response_counts_keep_generation_only():
 
 
 @pytest.mark.asyncio
+async def test_disabled_questionnaire_evaluator_skips_response_campaign():
+    response_service = FakeResponseService()
+    service = ScenarioService(
+        job_service=FakeJobService(),  # type: ignore[arg-type]
+        coordinator_service=FakeCoordinatorService(),  # type: ignore[arg-type]
+        questionnaire_service=FakeQuestionnaireService(),  # type: ignore[arg-type]
+        response_service=response_service,  # type: ignore[arg-type]
+        evaluation_service=FakeEvaluationService(),  # type: ignore[arg-type]
+    )
+
+    scenario = await service.run(
+        "Backend Python",
+        benign_count=1,
+        malicious_count=1,
+        benign_response_count=0,
+        malicious_response_count=0,
+        questionnaire_evaluator=False,
+        research_front=ResearchFront.ERROR_RECOVERY,
+        experiment_profile="error_recovery",
+    )
+
+    assert response_service.calls == 0
+    assert scenario.response_batches == []
+    assert scenario.evaluation_executions == []
+    assert all(
+        record.task_type == "questionnaire_generation" for record in scenario.benchmark_records
+    )
+
+
+@pytest.mark.asyncio
+async def test_direct_call_rejects_responses_when_evaluator_is_disabled():
+    service = ScenarioService()
+
+    with pytest.raises(ValueError, match="devem ser zero"):
+        await service.run(
+            "Backend Python",
+            benign_count=1,
+            malicious_count=1,
+            benign_response_count=1,
+            malicious_response_count=0,
+            questionnaire_evaluator=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_direct_call_rejects_evaluator_outside_security_front():
+    service = ScenarioService()
+
+    with pytest.raises(ValueError, match="só pode ser habilitado na frente security"):
+        await service.run(
+            "Backend Python",
+            benign_count=1,
+            malicious_count=1,
+            benign_response_count=1,
+            malicious_response_count=0,
+            questionnaire_evaluator=True,
+            research_front=ResearchFront.ERROR_RECOVERY,
+        )
+
+
+@pytest.mark.asyncio
 async def test_profile_front_is_persisted_in_scenario_and_benchmark_provenance():
     service = ScenarioService(
         job_service=FakeJobService(),  # type: ignore[arg-type]
@@ -267,6 +329,7 @@ async def test_profile_front_is_persisted_in_scenario_and_benchmark_provenance()
         malicious_count=1,
         benign_response_count=1,
         malicious_response_count=1,
+        questionnaire_evaluator=True,
         research_front=ResearchFront.SECURITY,
         experiment_profile="security",
     )
@@ -274,6 +337,11 @@ async def test_profile_front_is_persisted_in_scenario_and_benchmark_provenance()
     assert scenario.research_front is ResearchFront.SECURITY
     assert scenario.experiment_profile == "security"
     assert scenario.research_targets == ["RecruitSecBench"]
-    assert all(record.provenance["research_front"] == "security" for record in scenario.benchmark_records)
-    assert all(record.provenance["experiment_profile"] == "security" for record in scenario.benchmark_records)
+    assert all(
+        record.provenance["research_front"] == "security" for record in scenario.benchmark_records
+    )
+    assert all(
+        record.provenance["experiment_profile"] == "security"
+        for record in scenario.benchmark_records
+    )
     assert len(scenario.evaluation_executions) == _EXPECTED_EVALUATIONS

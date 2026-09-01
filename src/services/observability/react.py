@@ -19,7 +19,12 @@ from agno.run.agent import (
 )
 
 from src.clients.langfuse.client import get_langfuse_client
-from src.schemas.agent_debug.schema import AgentDebugTrajectoryStep, ErrorModule
+from src.schemas.agent_debug.schema import (
+    AgentDebugTrajectoryStep,
+    ErrorModule,
+    raw_output_envelope,
+    serialize_module_output,
+)
 from src.schemas.observability.schema import NodeLocus, TraceNode
 from src.services.observability.service import node_metadata
 from src.utils.privacy import redact_for_trace
@@ -147,8 +152,9 @@ class ReactSpanStreamer:
         key = self._tool_key(tool, name)
         arguments = self._serialize_result(getattr(tool, "tool_args", None))
         planning = reasoning or f"Próximo passo selecionado: executar a tool {name}."
-        action = self._as_text({"tool": name, "arguments": arguments})
-        raw_output = self._as_text({"planning": planning, "action": action})
+        action_payload = {"tool": name, "arguments": arguments}
+        action = serialize_module_output(action_payload)
+        raw_output = raw_output_envelope(planning, action_payload)
         self._steps.append(
             AgentDebugTrajectoryStep(
                 index=step,
@@ -189,12 +195,11 @@ class ReactSpanStreamer:
     ) -> None:
         """Registra falha sem tool terminal como um step analisável."""
         self._step += 1
-        action = self._as_text(
-            {
-                "operation": "agent_response_without_terminal_tool",
-                "output": self._serialize_result(final_output),
-            }
-        )
+        action_payload = {
+            "operation": "agent_response_without_terminal_tool",
+            "output": self._serialize_result(final_output),
+        }
+        action = serialize_module_output(action_payload)
         plan = planning or "A execução terminou sem selecionar uma tool terminal válida."
         env_response = self._as_text({"error": code, "message": message})
         self._steps.append(
@@ -206,7 +211,7 @@ class ReactSpanStreamer:
                 },
                 step_input=self._current_step_input(),
                 env_response=env_response,
-                raw_output=self._as_text({"planning": plan, "action": action}),
+                raw_output=raw_output_envelope(plan, action_payload),
             )
         )
         self._environment_history.append(f"step {self._step}: {env_response}")

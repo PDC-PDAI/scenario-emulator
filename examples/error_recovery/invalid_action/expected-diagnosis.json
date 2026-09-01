@@ -9,6 +9,6 @@
   },
   "expected_feedback": {
     "target_step": 2,
-    "required_effect": "Substituir salvar_formulario_v2 por salvar_formulario e preservar os argumentos válidos."
+    "expected_effect": "Substituir salvar_formulario_v2 por salvar_formulario e preservar os argumentos válidos."
   }
 }

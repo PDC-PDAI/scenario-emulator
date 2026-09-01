@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src.schemas.agent_debug.schema import ErrorModule, ErrorType, FailureCode
@@ -9,6 +11,7 @@ from src.schemas.evaluation.schema import (
     EvidenciaFormulario,
     NotaFormulario,
 )
+from src.schemas.job_description.schema import JobDescription
 from src.schemas.questionnaire.schema import Questionnaire, QuestionnaireQuestion
 from src.schemas.response.schema import (
     ResponseAttackCategory,
@@ -16,7 +19,10 @@ from src.schemas.response.schema import (
     ResponseIntent,
 )
 from src.schemas.submission.schema import QuestionnaireSubmission
-from src.services.agent_debug.service import evaluation_failure_annotation
+from src.services.agent_debug.service import (
+    evaluation_agent_debug_trajectory,
+    evaluation_failure_annotation,
+)
 from src.services.evaluation.oracle import evaluate_oracle
 from src.services.evaluation.service import EvaluationService
 
@@ -219,3 +225,50 @@ def test_evaluator_timeout_is_retryable_system_failure():
     assert annotation.module is ErrorModule.SYSTEM
     assert annotation.error_type is ErrorType.LLM_LIMIT
     assert annotation.retryable is True
+
+
+def test_evaluator_action_uses_normalized_result_with_provenance():
+    text = "Resposta profissional detalhada."
+    result = _result(8.0, text)
+    raw_output = '{"valor":8,"justificativa":"saída bruta","evidencias":[]}'
+
+    trajectory = EvaluationService._trajectory(
+        trajectory_id="evaluation-trajectory-3",
+        task_description="Avaliar resposta.",
+        step_input=text,
+        raw_output=raw_output,
+        result=result,
+    )
+
+    step = trajectory.steps[0]
+    action = json.loads(step.module_outputs[ErrorModule.ACTION])
+    assert step.raw_output == raw_output
+    assert action["tipo"] == "FORMULARIO"
+    assert action["evidencias"][0]["questionId"] == "questionnaire-1:1"
+
+
+def test_legacy_evaluator_failure_does_not_emit_null_raw_output():
+    failure_reason = "EVALUATION_FAILED: provider timeout"
+    execution = EvaluationExecution(
+        trajectory_id="evaluation-trajectory-legacy",
+        scenario_id="scenario-1",
+        questionnaire_id="questionnaire-1",
+        submission=_submission("Resposta profissional detalhada."),
+        status=EvaluationStatus.FAILED,
+        failure_reason=failure_reason,
+        duration_ms=1,
+    )
+    job = JobDescription(
+        id="job-1",
+        title="Backend Python",
+        summary="Desenvolvimento de APIs Python com FastAPI e observabilidade.",
+        responsibilities=["Construir APIs."],
+        requirements=["Python e FastAPI."],
+        source_brief="Backend Python",
+    )
+
+    trajectory = evaluation_agent_debug_trajectory(job, execution)
+
+    step = trajectory.steps[0]
+    assert step.raw_output == failure_reason
+    assert step.module_outputs[ErrorModule.SYSTEM] == failure_reason

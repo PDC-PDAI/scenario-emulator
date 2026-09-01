@@ -57,7 +57,10 @@ def _execution(
                 },
                 step_input=prompt.command,
                 env_response=status.value,
-                raw_output="saída observável",
+                raw_output=(
+                    '{"planning":"Vou executar a solicitação.",'
+                    '"action":{"tool":"salvar_formulario"}}'
+                ),
             )
         ],
     )

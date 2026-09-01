@@ -8,9 +8,9 @@ description: >-
 pipeline:
   benign_commands: 3
   malicious_commands: 0
-  benign_responses: 1
+  benign_responses: 0
   malicious_responses: 0
-  questionnaire_evaluator: true
+  questionnaire_evaluator: false
 
 artifacts:
   output_dir: outputs/error_recovery

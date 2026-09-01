@@ -208,15 +208,19 @@ mantém os defaults históricos e os caminhos de saída devem ser informados por
 
 ### Avaliador de questionário
 
-O avaliador incorporado da `main` faz parte dos dois perfis por meio de
-`questionnaire_evaluator: true`. Para cada questionário gerado com sucesso, o serviço
-cria o lote de respostas configurado e chama o avaliador uma vez por resposta. A saída
-inclui nota, justificativa e evidências; um oráculo determinístico verifica limiar da
-nota, proveniência das evidências e vazamento/obediência aos canários.
+O avaliador incorporado da `main` faz parte do perfil `security` por meio de
+`questionnaire_evaluator: true`. A flag é propagada pela CLI até o serviço de cenário.
+Para cada questionário gerado com sucesso, o serviço cria o lote de respostas configurado
+e chama o avaliador uma vez por resposta. A saída inclui nota, justificativa e evidências;
+um oráculo determinístico verifica limiar da nota, proveniência das evidências e
+vazamento/obediência aos canários.
 
 Se `benign_responses` e `malicious_responses` forem ambos zero, a execução termina na
 geração do questionário e não há o que avaliar. O schema rejeita um perfil que peça
 respostas com `questionnaire_evaluator: false`.
+
+O perfil `error_recovery` mantém a flag desabilitada e as contagens de respostas em zero;
+o schema rejeita a habilitação do avaliador fora da frente `security`.
 
 ### Limite atual da frente `error_recovery`
 
@@ -246,6 +250,10 @@ Falha de runtime, ausência de tool terminal, salvamento inválido, over-refusal
 
 ### Contrato de erro e AgentDebug-RH
 
+A definição normativa de `step`, o contrato de entrada/saída e a matriz de
+disponibilidade das métricas estão em
+[`docs/data-contracts/agentdebug.md`](docs/data-contracts/agentdebug.md).
+
 Cada execução persiste dois níveis diferentes de informação:
 
 - `failure_annotation`: rótulo determinístico do oráculo do emulador, com `code`,
@@ -253,11 +261,12 @@ Cada execução persiste dois níveis diferentes de informação:
 - `agent_debug_trajectory`: entrada autocontida da pipeline de diagnóstico, no mesmo
   formato de `Trajectory` usado pelo projeto em `.references/agentdebug-rh-*`.
 
-Cada tool call vira um `TrajectoryStep` 1-indexado. `module_outputs` contém apenas o
-que é observável (`planning` e `action`), `step_input` carrega o contexto disponível
-naquele momento e `env_response` guarda o resultado ou erro da tool. Memory e
-reflection não são fabricados quando o agente não os emite. Falhas sem tool terminal
-ganham um último step explícito para não desaparecerem da análise.
+Cada tool call vira um `TrajectoryStep` 1-indexado: um ciclo de decisão que reúne o
+contexto, os módulos emitidos, a ação e a resposta do ambiente. `module_outputs`
+contém apenas o que é observável (`planning` e `action`), `step_input` carrega o
+contexto disponível naquele momento e `env_response` guarda o resultado ou erro da
+tool. Memory e reflection não são fabricados quando o agente não os emite. Falhas sem
+tool terminal ganham um último step explícito para não desaparecerem da análise.
 
 Cada chamada do avaliador também gera uma trajetória. Seu step registra a justificativa
 emitida em `reflection`, a nota estruturada em `action` e o resultado do oráculo em
@@ -282,6 +291,89 @@ um futuro replay seletivo, mas este
 serviço ainda não oferece reexecução a partir de um step: o Agno não garante replay
 seletivo apenas com `debug_mode`, e o adaptador de rollout do projeto de referência
 ainda precisa de um contrato HTTP de execução.
+
+### Rodando um cenário na frente B
+
+Os dois checkouts devem ser irmãos. O diretório do projeto da frente B se chama
+`agentdebug-rh` (sem hífen entre `agent` e `debug`):
+
+```text
+PDC-PDAI/
+├── scenario-emulator/
+└── agentdebug-rh/
+```
+
+Primeiro instale e configure a frente B. Use o provider, modelo e credencial aos quais
+o seu ambiente tem acesso; não reutilize nem copie uma chave para o repositório:
+
+```bash
+cd ../agentdebug-rh
+uv sync
+cp .env.example .env
+```
+
+Edite `agentdebug-rh/.env` conforme as instruções do README desse projeto. Em seguida,
+rode o case controlado de `action/invalid_action`, que já contém uma trajetória com
+ground truth e não precisa gerar um cenário novo:
+
+```bash
+uv run python src/main.py \
+  ../scenario-emulator/examples/error_recovery/invalid_action/agent-debug.jsonl \
+  --output-dir ../scenario-emulator/outputs/agentdebug-smoke \
+  --max-parallel 1 \
+  --max-attempts 1 \
+  --print-diagnosis
+```
+
+O aceite esperado é:
+
+```text
+Execuções analisadas    : 1
+Com causa raiz apontada : 1
+Com remediação gerada   : 1
+Chamadas de LLM         : 6 (0 com falha)
+...
+step 2 / action / invalid_action
+```
+
+O diagnóstico completo fica em `outputs/agentdebug-smoke/`, no
+`scenario-emulator`. Compare `outcome`, `critical_error` e `feedback` com
+[`examples/error_recovery/invalid_action/expected-diagnosis.json`](examples/error_recovery/invalid_action/expected-diagnosis.json).
+
+Para gerar uma trajetória nova na frente A e depois entregá-la à frente B, volte ao
+`scenario-emulator` e use caminhos isolados para não sobrescrever outra campanha:
+
+```bash
+cd ../scenario-emulator
+uv run scenario-emulator run \
+  --profile configs/fronts/error_recovery.yaml \
+  --brief "Vaga sênior de backend Python, FastAPI e PostgreSQL" \
+  --benign 1 \
+  --malicious 0 \
+  --output outputs/agentdebug-e2e/scenario.json \
+  --jsonl outputs/agentdebug-e2e/benchmark.jsonl \
+  --agent-debug-jsonl outputs/agentdebug-e2e/agent-debug.jsonl \
+  --trajectories-dir outputs/agentdebug-e2e/trajectories
+
+cd ../agentdebug-rh
+uv run python src/main.py \
+  ../scenario-emulator/outputs/agentdebug-e2e/agent-debug.jsonl \
+  --output-dir ../scenario-emulator/outputs/agentdebug-e2e/diagnoses \
+  --max-parallel 1 \
+  --max-attempts 1 \
+  --print-diagnosis
+```
+
+A frente B pula trajetórias cujo `success` seja `true`, pois não há falha para
+diagnosticar. Use o case controlado acima para validar causa raiz e remediação; use o
+fluxo completo para validar geração, exportação e leitura do contrato entre os projetos.
+
+Se o provider responder `Unsupported parameter: 'temperature'`, o modelo escolhido não
+é compatível com o `temperature=0` enviado atualmente pela frente B. Selecione um modelo
+compatível ou use uma versão da frente B que omita esse parâmetro para o modelo em
+questão. Não aceite apenas o exit code: confirme no relatório `0 com falha` e, no JSON,
+que os `module_analyses[*].status` são `ok`; uma falha de provider pode ser persistida
+como diagnóstico parcial.
 
 O debug verboso nativo do Agno é opcional:
 
