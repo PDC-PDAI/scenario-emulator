@@ -46,6 +46,22 @@ def extract_usage(response: Any) -> dict[str, int] | None:
     return None
 
 
+def recover_run_output(agent: Any, final_output: Any) -> Any:
+    """Devolve o RunOutput do stream ou recupera-o da sessão do agente.
+
+    Em erro de provider/timeout o Agno emite RunErrorEvent e encerra o stream
+    SEM entregar o RunOutput; com uma sessão configurada (InMemoryDb), o run
+    fica persistido com status=error e as mensagens até o turno da falha —
+    ``get_last_run_output()`` o resgata. Best-effort: nunca levanta.
+    """
+    if final_output is not None:
+        return final_output
+    try:
+        return agent.get_last_run_output()
+    except Exception:  # noqa: BLE001 - recuperação nunca derruba o fluxo
+        return None
+
+
 def _parse_tool_arguments(arguments: Any) -> Any:
     if not isinstance(arguments, str):
         return arguments
@@ -72,11 +88,22 @@ def _chat_tool_calls(raw: Any) -> list[ChatToolCall] | None:
 
 
 def clean_agent_messages(run_output: Any) -> list[ChatMessage] | None:
-    """``RunOutput.messages`` do Agno → conversa crua no contrato exportável.
+    """``RunOutput.messages`` do Agno → conversa no contrato NORMALIZADO exportável.
 
-    Preserva a ordem exata e os ``tool_call_id`` reais — é o que permite à
-    Frente C reexecutar com prefixo verbatim. Devolve ``None`` quando o run não
-    expôs mensagens (execução legada ou stub), mantendo o campo ausente.
+    O que é verbatim: a ordem das mensagens, os papéis, o conteúdo textual e os
+    ``tool_call_id`` reais — o suficiente para a Frente C reexecutar com prefixo
+    fiel. A serialização, porém, é normalizada de propósito:
+
+    - argumentos de tool em JSON viram objeto (``str`` → ``dict``); a C extrai
+      ids da tarefa por chave e depende disso;
+    - renomeações: ``tool_name`` → ``name``, ``reasoning_content`` → ``reasoning``;
+    - metadados internos do Agno/provider (``metrics``, ``provider_data``,
+      timestamps) são REMOVIDOS — ``provider_data`` carrega
+      ``previous_response_id`` da Responses API e, se voltasse no prefixo de um
+      replay, faria o provider enviar só o delta e quebraria a reexecução.
+
+    Devolve ``None`` quando o run não expôs mensagens (execução legada ou stub),
+    mantendo o campo ausente do contrato.
     """
     raw = getattr(run_output, "messages", None) or []
     messages: list[ChatMessage] = []

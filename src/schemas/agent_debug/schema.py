@@ -138,8 +138,10 @@ class AgentDebugTrajectory(BaseModel):
     environment: str
     success: bool = False
     steps: list[AgentDebugTrajectoryStep] = Field(default_factory=list)
-    # Conversa crua do run, na ordem exata enviada ao modelo. O AgentDebug-RH
-    # ignora o campo; a Frente C usa como prefixo verbatim do re-rollout.
+    # Conversa do run na ordem exata enviada ao modelo, em contrato NORMALIZADO
+    # (ver `clean_agent_messages`: ordem/papéis/conteúdo/tool_call_ids verbatim;
+    # argumentos parseados e metadados internos do provider removidos). O
+    # AgentDebug-RH ignora o campo; a Frente C usa como prefixo do re-rollout.
     # None = execução legada/adaptada sem captura nativa.
     messages: list[ChatMessage] | None = None
 

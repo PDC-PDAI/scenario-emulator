@@ -263,10 +263,17 @@ reflection não são fabricados quando o agente não os emite. Falhas sem tool t
 ganham um último step explícito para não desaparecerem da análise.
 
 As trajetórias do agente de questionário também carregam `messages`: a conversa
-crua do run (system/user/assistant/tool, com os `tool_call_id` reais, na ordem
-exata enviada ao modelo). O AgentDebug-RH ignora o campo na validação; a Frente C
-(`usecases-service`) o usa como prefixo verbatim do re-rollout a partir do passo
-crítico. Execuções legadas ou adaptadas não têm o campo e continuam válidas.
+do run (system/user/assistant/tool, com os `tool_call_id` reais, na ordem exata
+enviada ao modelo). O contrato é **normalizado**, não byte-a-byte: ordem, papéis,
+conteúdo e ids são preservados; argumentos de tools em JSON viram objetos e os
+metadados internos do Agno/provider são removidos — em particular
+`provider_data`, que carrega `previous_response_id` e quebraria o replay se
+fosse reenviado no prefixo (detalhes em `clean_agent_messages`). O AgentDebug-RH
+ignora o campo na validação; a Frente C (`usecases-service`) o usa como prefixo
+do re-rollout a partir do passo crítico. Execuções legadas ou adaptadas não têm
+o campo e continuam válidas. Em runs que falham por erro de provider/timeout, a
+conversa até o turno da falha é recuperada da sessão em memória do Agno
+(best-effort) e exportada do mesmo jeito.
 
 Cada chamada do avaliador também gera uma trajetória. Seu step registra a justificativa
 emitida em `reflection`, a nota estruturada em `action` e o resultado do oráculo em
