@@ -59,6 +59,15 @@ class Settings(BaseSettings):
     API_DATABASE_PATH: Path = ROOT_DIR / "data" / "scenario-emulator.db"
     API_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
+    @field_validator("AGNO_DEBUG_LEVEL", mode="before")
+    @classmethod
+    def coerce_agno_debug_level(cls, value: object) -> object:
+        # O Literal[1, 2] não coage a string vinda do .env ("1" != 1); sem isto,
+        # o próprio .env.example derruba o boot com ValidationError.
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+        return value
+
     @field_validator("LANGFUSE_PROMPT_LABEL", "LANGFUSE_SYNC_LABEL")
     @classmethod
     def reject_latest_label(cls, value: str) -> str:

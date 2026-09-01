@@ -320,3 +320,34 @@ async def test_benchmark_jsonl_and_openapi_are_exposed(tmp_path):
             assert "/api/v1/scenarios/{scenario_id}/agent-debug.jsonl" in openapi.json()["paths"]
     finally:
         repository.close()
+
+
+@pytest.mark.asyncio
+async def test_agent_debug_api_omits_null_messages(tmp_path):
+    # Mesma regra da CLI e dos arquivos: trajetória sem captura crua NÃO exporta
+    # "messages": null — nem no JSON da API, nem no JSONL.
+    app, repository = _app(tmp_path)
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/v1/scenarios",
+                json={
+                    "brief": "Vaga backend Python",
+                    "benign_count": 1,
+                    "malicious_count": 0,
+                },
+            )
+            listed = await client.get("/api/v1/scenarios/scenario-1/agent-debug/trajectories")
+            assert listed.status_code == status.HTTP_200_OK
+            items = listed.json()
+            assert items, "o cenário deve expor ao menos uma trajetória"
+            for item in items:
+                assert "messages" not in item
+
+            exported = await client.get("/api/v1/scenarios/scenario-1/agent-debug.jsonl")
+            assert exported.status_code == status.HTTP_200_OK
+            for line in exported.text.strip().splitlines():
+                assert "messages" not in json.loads(line)
+    finally:
+        repository.close()

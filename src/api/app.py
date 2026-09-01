@@ -420,6 +420,9 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
     @api.get(
         "/api/v1/scenarios/{scenario_id}/agent-debug/trajectories",
         response_model=list[AgentDebugTrajectory],
+        # Mesma regra da CLI e dos arquivos: trajetória sem captura crua omite
+        # `messages` em vez de exportar null.
+        response_model_exclude_none=True,
         tags=["agent-debug"],
         summary="Obtém trajetórias compatíveis com o AgentDebug-RH",
     )
@@ -437,7 +440,7 @@ def create_app(  # noqa: PLR0915 - registra explicitamente todos os contratos HT
     )
     async def get_agent_debug_jsonl(scenario_id: str) -> Response:
         trajectories = scenario_trajectories(scenario_or_404(scenario_id))
-        body = "\n".join(item.model_dump_json() for item in trajectories) + "\n"
+        body = "\n".join(item.model_dump_json(exclude_none=True) for item in trajectories) + "\n"
         return Response(content=body, media_type="application/x-ndjson")
 
     return api

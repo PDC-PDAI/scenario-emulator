@@ -228,12 +228,15 @@ O perfil já captura cada step em JSON e cataloga quatro modos iniciais de falha
 `action`: `misalignment`, `invalid_action`, `format_error` e `parameter_error`. Esse é o
 contrato consumido pelo AgentDebug-RH para identificar step, módulo e tipo.
 
-O YAML mantém `replay_enabled: false` porque ainda falta o contrato HTTP de re-rollout
-com o serviço que restaura os checkpoints anteriores e reexecuta o subgrafo a partir do
-step alterado. O loader rejeita `true` para impedir que uma simples mutação de JSON seja
-apresentada como replay real. Quando essa fronteira existir, o catálogo será a entrada da
-injeção controlada e a nova trajetória deverá carregar relação pai/filho com a execução
-original.
+O contrato HTTP de re-rollout existe no `usecases-service` (Frente C):
+`POST /executions/{id}/re-rollout` reexecuta a partir do step crítico
+reaproveitando o prefixo gravado em `messages` e devolve a nova trajetória com
+`lineage` pai/filho apontando para a execução original — ciclo já validado
+ponta a ponta com o AgentDebug-RH. O YAML ainda mantém `replay_enabled: false`
+porque este repositório ainda não consome esse contrato; o loader rejeita
+`true` para impedir que uma simples mutação de JSON seja apresentada como
+replay real. Virá-lo para `true` é o próximo passo agora que as trajetórias
+exportam a conversa crua.
 
 Um case autocontido de `action/invalid_action`, executável a partir de um clone limpo e
 sem depender de `outputs/`, está documentado em
@@ -268,6 +271,19 @@ contexto disponível naquele momento e `env_response` guarda o resultado ou erro
 tool. Memory e reflection não são fabricados quando o agente não os emite. Falhas sem
 tool terminal ganham um último step explícito para não desaparecerem da análise.
 
+As trajetórias do agente de questionário também carregam `messages`: a conversa
+do run (system/user/assistant/tool, com os `tool_call_id` reais, na ordem exata
+enviada ao modelo). O contrato é **normalizado**, não byte-a-byte: ordem, papéis,
+conteúdo e ids são preservados; argumentos de tools em JSON viram objetos e os
+metadados internos do Agno/provider são removidos — em particular
+`provider_data`, que carrega `previous_response_id` e quebraria o replay se
+fosse reenviado no prefixo (detalhes em `clean_agent_messages`). O AgentDebug-RH
+ignora o campo na validação; a Frente C (`usecases-service`) o usa como prefixo
+do re-rollout a partir do passo crítico. Execuções legadas ou adaptadas não têm
+o campo e continuam válidas. Em runs que falham por erro de provider/timeout, a
+conversa até o turno da falha é recuperada da sessão em memória do Agno
+(best-effort) e exportada do mesmo jeito.
+
 Cada chamada do avaliador também gera uma trajetória. Seu step registra a justificativa
 emitida em `reflection`, a nota estruturada em `action` e o resultado do oráculo em
 `env_response`. Violações de canário/instruction-following, nota incompatível,
@@ -286,11 +302,11 @@ responsável por detectar módulos, causa crítica e remediação.
 O JSONL pode ser passado diretamente à entrada de arquivo do `agent-debug-rh`. Os
 arquivos criados por `--trajectories-dir` têm o nome `<trajectory_id>.json` e
 contêm exatamente uma trajetória cada; o diretório inteiro também pode ser usado
-como entrada do `agent-debug-rh`. Os steps também funcionam como checkpoints para
-um futuro replay seletivo, mas este
-serviço ainda não oferece reexecução a partir de um step: o Agno não garante replay
-seletivo apenas com `debug_mode`, e o adaptador de rollout do projeto de referência
-ainda precisa de um contrato HTTP de execução.
+como entrada do `agent-debug-rh`. A reexecução a partir de um step não é feita
+aqui: quem a oferece é o `usecases-service` (Frente C), que importa estes
+arquivos, usa `messages` como prefixo verbatim e reexecuta o restante com tools
+locais equivalentes às deste emulador. Os `steps` seguem sendo a visão
+anotável consumida pelo `agent-debug-rh`.
 
 ### Rodando um cenário na frente B
 

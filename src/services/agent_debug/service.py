@@ -428,6 +428,10 @@ def save_trajectory_files(
             raise ValueError(f"IDs de trajetória geraram o mesmo nome de arquivo: {filename}")
         filenames.add(filename)
         path = directory / filename
-        path.write_text(trajectory.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        # exclude_none omite `messages` nas trajetórias sem captura crua — os
+        # arquivos legados continuam idênticos (nenhum outro campo é anulável).
+        path.write_text(
+            trajectory.model_dump_json(indent=2, exclude_none=True) + "\n", encoding="utf-8"
+        )
         paths.append(path)
     return paths

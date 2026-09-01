@@ -103,6 +103,30 @@ def is_valid_error_pair(module: ErrorModule, error_type: ErrorType) -> bool:
     return error_type in _VALID_ERROR_TYPES[module]
 
 
+class ChatToolCall(BaseModel):
+    """Uma tool call emitida em uma mensagem ``assistant`` da conversa crua."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    name: str | None = None
+    arguments: Any = None
+
+
+class ChatMessage(BaseModel):
+    """Uma mensagem crua da conversa com o modelo (system/user/assistant/tool)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    content: Any = None
+    tool_calls: list[ChatToolCall] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
+    reasoning: str | None = None
+    error: bool | None = None
+
+
 class AgentDebugTrajectoryStep(BaseModel):
     """Um ciclo de decisão 1-indexado da execução modular do agente.
 
@@ -141,6 +165,12 @@ class AgentDebugTrajectory(BaseModel):
     environment: str
     success: bool = False
     steps: list[AgentDebugTrajectoryStep] = Field(default_factory=list)
+    # Conversa do run na ordem exata enviada ao modelo, em contrato NORMALIZADO
+    # (ver `clean_agent_messages`: ordem/papéis/conteúdo/tool_call_ids verbatim;
+    # argumentos parseados e metadados internos do provider removidos). O
+    # AgentDebug-RH ignora o campo; a Frente C usa como prefixo do re-rollout.
+    # None = execução legada/adaptada sem captura nativa.
+    messages: list[ChatMessage] | None = None
 
     @model_validator(mode="after")
     def validate_step_indices(self) -> AgentDebugTrajectory:

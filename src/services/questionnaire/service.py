@@ -7,13 +7,19 @@ from typing import Any
 
 import structlog
 from agno.agent import Agent
+from agno.db.in_memory import InMemoryDb
 from agno.run.agent import RunErrorEvent, RunOutput
 from agno.run.base import RunStatus
 from agno.tools.function import Function
 from pydantic import ValidationError
 
 from src.agents.model import build_model, get_model_identifier
-from src.agents.utils import extract_usage, parse_model_output
+from src.agents.utils import (
+    clean_agent_messages,
+    extract_usage,
+    parse_model_output,
+    recover_run_output,
+)
 from src.prompts.manager import resolve_prompt
 from src.prompts.raw_prompts import QUESTIONNAIRE_SYSTEM_PROMPT, QUESTIONNAIRE_USER_PROMPT
 from src.schemas.agent_debug.schema import AgentDebugTrajectory
@@ -194,6 +200,12 @@ class QuestionnaireService:
                 tool_call_limit=6,
                 debug_mode=settings.AGNO_DEBUG,
                 debug_level=settings.AGNO_DEBUG_LEVEL,
+                # Sessão em memória por request: em erro de provider/timeout o Agno
+                # encerra o stream sem entregar o RunOutput, mas persiste o run
+                # (status=error, com as mensagens até a falha) na sessão — é de lá
+                # que get_last_run_output() recupera a conversa. Sem db, esse
+                # caminho de recuperação não existe.
+                db=InMemoryDb(),
             )
             streamer = ReactSpanStreamer(
                 node_prefix=node_id,
@@ -223,6 +235,10 @@ class QuestionnaireService:
                     trajectory_id=trajectory_id,
                     coordinator_prompt_id=coordinator_prompt.id,
                 )
+
+            # Erro de provider/timeout termina o stream sem RunOutput; recupera o
+            # run parcial (com as mensagens até a falha) da sessão em memória.
+            final_output = recover_run_output(agent, final_output)
 
             if (
                 run_error is None
@@ -300,6 +316,7 @@ class QuestionnaireService:
                 environment="scenario-emulator/front-a/questionnaire-agent",
                 success=benchmark_passed,
                 steps=streamer.trajectory_steps,
+                messages=clean_agent_messages(final_output),
             )
             result = QuestionnaireExecution(
                 trajectory_id=trajectory_id,
@@ -336,7 +353,11 @@ class QuestionnaireService:
                         "question_count": len(result.questionnaire.questions)
                         if result.questionnaire
                         else 0,
-                        "agent_debug_trajectory": trajectory,
+                        # A conversa crua já vive no arquivo exportado; o span não
+                        # duplica prompts/observações inteiros no Langfuse.
+                        "agent_debug_trajectory": trajectory.model_dump(
+                            mode="json", exclude={"messages"}
+                        ),
                         "failure_annotation": result.failure_annotation,
                     }
                 ),
