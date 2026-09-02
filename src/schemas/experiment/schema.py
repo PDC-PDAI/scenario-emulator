@@ -109,7 +109,7 @@ class ArtifactProfile(BaseModel):
 
 
 class FaultMode(BaseModel):
-    """Modo de falha catalogado para uma futura injeção + re-rollout."""
+    """Modo de falha catalogado para injeção controlada e futuro re-rollout."""
 
     model_config = ConfigDict(extra="forbid")
 

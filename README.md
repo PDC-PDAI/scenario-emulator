@@ -308,6 +308,42 @@ arquivos, usa `messages` como prefixo verbatim e reexecuta o restante com tools
 locais equivalentes às deste emulador. Os `steps` seguem sendo a visão
 anotável consumida pelo `agent-debug-rh`.
 
+### Campanha retomável de entradas da Frente B
+
+A campanha versionada
+[`configs/campaigns/error-recovery-front-b-100.yaml`](configs/campaigns/error-recovery-front-b-100.yaml)
+executa dez temas da Frente A em paralelo e coleta 100 baselines válidas. Cada
+checkpoint terminal recebe uma das quatro mutações controladas do catálogo de
+`action`; o runner repõe baselines naturais que falharem e reutiliza os lotes já
+salvos quando o comando é executado novamente.
+
+```bash
+uv run scenario-emulator validate-dataset-campaign \
+  configs/campaigns/error-recovery-front-b-100.yaml
+
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/error-recovery-front-b-100.yaml \
+  --max-parallel 10
+```
+
+Os artefatos públicos não carregam o rótulo esperado. IDs e nomes de arquivos são
+neutros (`generation-001`, `generation-002`, ...), e a atribuição dos erros é
+embaralhada para não criar um padrão inferível:
+
+```text
+outputs/error-recovery-front-b-100/
+├── front-b-input.jsonl       # entrada pública: um Trajectory por linha
+├── front-b-inputs/           # os mesmos objetos, um JSON por geração
+├── labels.json               # mapa separado generation-id → error_type
+└── private/                  # baselines, proveniência, manifesto e checkpoints
+```
+
+Compartilhe `front-b-input.jsonl` ou `front-b-inputs/` com quem executará a Frente B.
+Envie `labels.json` separadamente somente para a etapa de avaliação; não coloque esse
+arquivo no mesmo diretório consumido pelo detector. As mutações preservam planning e
+o prefixo real da Frente A, mas não são apresentadas como re-rollout:
+`replay_enabled` continua `false`.
+
 ### Rodando um cenário na frente B
 
 Os dois checkouts devem ser irmãos. O diretório do projeto da frente B se chama

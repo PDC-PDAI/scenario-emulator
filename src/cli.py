@@ -79,6 +79,33 @@ def _parser() -> argparse.ArgumentParser:
     )
     validate_profile.add_argument("profile", type=Path, help="Arquivo YAML do perfil.")
 
+    dataset = commands.add_parser(
+        "run-dataset",
+        help="Gera uma campanha retomável de entradas da Frente B.",
+    )
+    dataset.add_argument("--campaign", type=Path, required=True, help="Campanha YAML.")
+    dataset.add_argument(
+        "--limit",
+        type=int,
+        help="Limita a coleta às primeiras N trajetórias planejadas.",
+    )
+    dataset.add_argument(
+        "--max-parallel",
+        type=int,
+        help="Sobrescreve a quantidade de cenários executados em paralelo.",
+    )
+    dataset.add_argument(
+        "--output-dir",
+        type=Path,
+        help="Sobrescreve o diretório de saída da campanha.",
+    )
+
+    validate_campaign = commands.add_parser(
+        "validate-dataset-campaign",
+        help="Valida e imprime a forma normalizada de uma campanha de dataset.",
+    )
+    validate_campaign.add_argument("campaign", type=Path, help="Arquivo YAML da campanha.")
+
     export = commands.add_parser(
         "export-trace",
         help="Exporta um trace completo do Langfuse em um único JSON.",
@@ -223,7 +250,37 @@ def _validate_profile(args: argparse.Namespace) -> int:
     return 0
 
 
-def main() -> int:
+def _validate_dataset_campaign(args: argparse.Namespace) -> int:
+    from src.services.dataset.profile import load_dataset_campaign_profile  # noqa: PLC0415
+
+    campaign = load_dataset_campaign_profile(args.campaign)
+    print(campaign.model_dump_json(indent=2))
+    return 0
+
+
+async def _run_dataset(args: argparse.Namespace) -> int:
+    from src.services.dataset.profile import load_dataset_campaign_profile  # noqa: PLC0415
+    from src.services.dataset.service import ErrorRecoveryDatasetService  # noqa: PLC0415
+
+    campaign = load_dataset_campaign_profile(args.campaign)
+    summary = await ErrorRecoveryDatasetService().run(
+        campaign,
+        limit=args.limit,
+        max_parallel=args.max_parallel,
+        output_dir=args.output_dir,
+    )
+    destination = args.output_dir or campaign.output_dir
+    print(f"Campanha: {campaign.name}")
+    print(
+        f"Resultado: {summary.recorded_executions}/{summary.planned_executions} "
+        "entradas da Frente B geradas."
+    )
+    print(f"Dataset público: {destination / 'front-b-input.jsonl'}")
+    print(f"Rótulos separados: {destination / 'labels.json'}")
+    return 0 if summary.complete else 2
+
+
+def main() -> int:  # noqa: PLR0911 - dispatcher explícito mantém os comandos isolados
     parser = _parser()
     args = parser.parse_args()
     if args.command == "sync-prompts":
@@ -235,6 +292,18 @@ def main() -> int:
             return _validate_profile(args)
         except ValueError as exc:
             parser.error(str(exc))
+    if args.command == "validate-dataset-campaign":
+        try:
+            return _validate_dataset_campaign(args)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if args.command == "run-dataset":
+        try:
+            return asyncio.run(_run_dataset(args))
+        except ValueError as exc:
+            parser.error(str(exc))
+        finally:
+            flush_langfuse()
     if args.command == "export-trace":
         return _export_trace(args)
     if args.command == "serve":
