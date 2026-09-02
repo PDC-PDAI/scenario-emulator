@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from agno.models.openai import OpenAIChat, OpenAIResponses
 
+from src.agents.openrouter import OpenRouterChat
 from src.settings import settings
 
 ModelRole = Literal["default", "response_generator", "evaluator"]
@@ -28,17 +29,31 @@ def _role_config(role: ModelRole) -> tuple[str, str]:
 def build_model(role: ModelRole = "default") -> Any:
     provider, model_id = _role_config(role)
     if provider in {"openai", "openai_like"}:
-        return OpenAIChat(
+        is_openrouter = bool(
+            settings.OPENAI_BASE_URL and "openrouter.ai" in settings.OPENAI_BASE_URL.lower()
+        )
+        model_class = OpenRouterChat if is_openrouter else OpenAIChat
+        openrouter_reasoning = None
+        if is_openrouter:
+            openrouter_reasoning = {"exclude": False}
+            if settings.OPENAI_REASONING_EFFORT:
+                openrouter_reasoning["effort"] = settings.OPENAI_REASONING_EFFORT
+            else:
+                openrouter_reasoning["enabled"] = True
+        return model_class(
             id=model_id,
             api_key=settings.OPENAI_API_KEY or None,
             base_url=settings.OPENAI_BASE_URL or None,
-            reasoning_effort=settings.OPENAI_REASONING_EFFORT,
+            max_retries=settings.OPENAI_MAX_RETRIES,
+            reasoning_effort=(None if is_openrouter else settings.OPENAI_REASONING_EFFORT),
+            extra_body={"reasoning": openrouter_reasoning} if openrouter_reasoning else None,
         )
     if provider == "openai_responses":
         return OpenAIResponses(
             id=model_id,
             api_key=settings.OPENAI_API_KEY or None,
             base_url=settings.OPENAI_BASE_URL or None,
+            max_retries=settings.OPENAI_MAX_RETRIES,
             reasoning_effort=settings.OPENAI_REASONING_EFFORT,
             reasoning_summary="auto",
         )
