@@ -100,6 +100,24 @@ class DatasetGroundTruth(BaseModel):
     injection: dict[str, object]
 
 
+class DatasetLabel(BaseModel):
+    """Oráculo mínimo comparável ao ``critical_error`` produzido pela Frente B."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    step: int = Field(ge=1)
+    module: ErrorModule
+    error_type: ErrorType
+
+    @classmethod
+    def from_ground_truth(cls, truth: DatasetGroundTruth) -> DatasetLabel:
+        return cls(
+            step=truth.critical_failure_step,
+            module=truth.critical_failure_module,
+            error_type=truth.critical_failure_type,
+        )
+
+
 class DatasetRunSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

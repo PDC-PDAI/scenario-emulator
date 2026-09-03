@@ -24,6 +24,7 @@ from src.schemas.dataset.schema import (
     DatasetCampaignProfile,
     DatasetCampaignScenario,
     DatasetGroundTruth,
+    DatasetLabel,
     DatasetRunSummary,
     FrontBTrajectory,
 )
@@ -526,7 +527,10 @@ class ErrorRecoveryDatasetService:
             output_dir / "private" / "provenance.jsonl",
             "".join(item.model_dump_json() + "\n" for item in ground_truth),
         )
-        labels = {item.trajectory_id: item.critical_failure_type.value for item in ground_truth}
+        labels = {
+            item.trajectory_id: DatasetLabel.from_ground_truth(item).model_dump(mode="json")
+            for item in ground_truth
+        }
         _atomic_write(output_dir / "labels.json", _json_text(labels, indent=2) + "\n")
         counts = Counter(item.fault_id for item in ground_truth)
         recorded = len(inputs)

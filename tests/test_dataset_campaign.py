@@ -33,6 +33,7 @@ PLANNED_CAMPAIGN_EXECUTIONS = 100
 MAX_CAMPAIGN_PARALLELISM = 10
 TEST_SCENARIOS = 2
 TEST_EXECUTIONS = 8
+ERROR_STEP = 2
 
 
 def _baseline(trajectory_id: str = "baseline-001") -> AgentDebugTrajectory:
@@ -235,7 +236,10 @@ async def test_runner_is_resumable_and_keeps_labels_out_of_public_dataset(tmp_pa
     )
     labels = json.loads((output_dir / "labels.json").read_text())
     assert set(labels) == {item["trajectory_id"] for item in public_records}
-    assert Counter(labels.values()) == {
+    assert all(set(label) == {"step", "module", "error_type"} for label in labels.values())
+    assert all(label["step"] == ERROR_STEP for label in labels.values())
+    assert all(label["module"] == "action" for label in labels.values())
+    assert Counter(label["error_type"] for label in labels.values()) == {
         "misalignment": 2,
         "invalid_action": 2,
         "format_error": 2,
@@ -244,6 +248,8 @@ async def test_runner_is_resumable_and_keeps_labels_out_of_public_dataset(tmp_pa
     serialized_public = json.dumps(public_records, ensure_ascii=False)
     assert "critical_failure_type" not in serialized_public
     assert "fault_id" not in serialized_public
-    assert all(label not in serialized_public.lower() for label in labels.values())
+    assert all(
+        label["error_type"] not in serialized_public.lower() for label in labels.values()
+    )
     assert (output_dir / "private" / "provenance.jsonl").exists()
     assert not (output_dir / "ground-truth.jsonl").exists()
