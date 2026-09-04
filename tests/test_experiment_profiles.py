@@ -26,7 +26,7 @@ def test_security_profile_runs_evaluator_and_exports_all_artifacts():
     assert profile.artifacts.agent_debug_path == Path("outputs/security/agent-debug.jsonl")
 
 
-def test_error_recovery_profile_catalogs_action_faults_and_checkpoints():
+def test_error_recovery_profile_catalogs_supported_faults_and_checkpoints():
     profile = load_experiment_profile(ROOT / "configs/fronts/error_recovery.yaml")
 
     assert profile.front is ResearchFront.ERROR_RECOVERY
@@ -37,9 +37,23 @@ def test_error_recovery_profile_catalogs_action_faults_and_checkpoints():
     assert profile.error_recovery.capture_checkpoints is True
     assert profile.error_recovery.replay_enabled is False
     assert {mode.target_module for mode in profile.error_recovery.fault_catalog} == {
-        ErrorModule.ACTION
+        ErrorModule.PLANNING,
+        ErrorModule.ACTION,
+        ErrorModule.SYSTEM,
     }
-    assert ErrorType.INVALID_ACTION in {
+    assert {
+        ErrorType.CONSTRAINT_IGNORANCE,
+        ErrorType.IMPOSSIBLE_ACTION,
+        ErrorType.INEFFICIENT_PLAN,
+        ErrorType.MISALIGNMENT,
+        ErrorType.INVALID_ACTION,
+        ErrorType.FORMAT_ERROR,
+        ErrorType.PARAMETER_ERROR,
+        ErrorType.STEP_LIMIT,
+        ErrorType.TOOL_EXECUTION_ERROR,
+        ErrorType.LLM_LIMIT,
+        ErrorType.ENVIRONMENT_ERROR,
+    } == {
         mode.error_type for mode in profile.error_recovery.fault_catalog
     }
 

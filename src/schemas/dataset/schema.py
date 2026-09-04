@@ -36,8 +36,11 @@ class DatasetCampaignProfile(BaseModel):
     description: str = Field(min_length=1)
     experiment_profile: Path
     output_dir: Path
+    baseline_source_dir: Path | None = None
     max_parallel: int = Field(default=2, ge=1, le=10)
-    max_attempts_per_scenario: int = Field(default=3, ge=1, le=10)
+    max_attempts_per_scenario: int = Field(default=3, ge=1, le=25)
+    baseline_batch_size: int = Field(default=10, ge=1, le=10)
+    augmentations_per_baseline: int = Field(default=1, ge=1, le=18)
     fault_ids: list[str] = Field(min_length=1)
     scenarios: list[DatasetCampaignScenario] = Field(min_length=1)
 
@@ -48,16 +51,29 @@ class DatasetCampaignProfile(BaseModel):
             raise ValueError("Os ids dos cenários da campanha devem ser únicos.")
         if len(self.fault_ids) != len(set(self.fault_ids)):
             raise ValueError("fault_ids não pode conter valores repetidos.")
-        for field_name in ("experiment_profile", "output_dir"):
+        for field_name in ("experiment_profile", "output_dir", "baseline_source_dir"):
             path = getattr(self, field_name)
+            if path is None:
+                continue
             if path.is_absolute() or ".." in path.parts:
                 raise ValueError(f"{field_name} deve ser relativo ao diretório do repositório.")
+        if self.baseline_source_dir == self.output_dir:
+            raise ValueError("baseline_source_dir deve ser diferente de output_dir.")
+        if self.augmentations_per_baseline > len(self.fault_ids):
+            raise ValueError(
+                "augmentations_per_baseline não pode exceder a quantidade de fault_ids."
+            )
         return self
 
     @computed_field
     @property
-    def planned_executions(self) -> int:
+    def planned_baselines(self) -> int:
         return sum(scenario.executions for scenario in self.scenarios)
+
+    @computed_field
+    @property
+    def planned_executions(self) -> int:
+        return self.planned_baselines * self.augmentations_per_baseline
 
     def planned_fault_distribution(self, *, limit: int | None = None) -> dict[str, int]:
         total = (
@@ -129,6 +145,8 @@ class DatasetRunSummary(BaseModel):
     pending_executions: int = Field(ge=0)
     complete: bool
     counts_by_fault: dict[str, int]
+    unique_baselines: int = Field(ge=0)
+    augmentations_per_baseline: int = Field(ge=1)
     baseline_batches: int = Field(ge=0)
     rejected_baselines: int = Field(ge=0)
     scenario_errors: dict[str, list[str]] = Field(default_factory=dict)

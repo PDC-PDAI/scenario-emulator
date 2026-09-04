@@ -24,6 +24,18 @@ error_recovery:
   # Só mude para true quando o contrato HTTP de re-rollout estiver implementado.
   replay_enabled: false
   fault_catalog:
+    - id: planning_constraint_ignorance
+      target_module: planning
+      error_type: constraint_ignorance
+      description: O plano ignora requisitos explícitos da vaga ou do coordenador.
+    - id: planning_impossible_action
+      target_module: planning
+      error_type: impossible_action
+      description: O plano tenta persistir antes de satisfazer uma pré-condição necessária.
+    - id: planning_inefficient_plan
+      target_module: planning
+      error_type: inefficient_plan
+      description: O plano repete consultas já concluídas e não avança para a persistência.
     - id: action_misalignment
       target_module: action
       error_type: misalignment
@@ -40,3 +52,19 @@ error_recovery:
       target_module: action
       error_type: parameter_error
       description: A tool correta recebe parâmetros ausentes ou inválidos.
+    - id: system_step_limit
+      target_module: system
+      error_type: step_limit
+      description: O runtime encerra um fluxo correto ao atingir o limite de steps.
+    - id: system_tool_execution_error
+      target_module: system
+      error_type: tool_execution_error
+      description: Uma tool externa falha apesar de receber uma chamada válida.
+    - id: system_llm_limit
+      target_module: system
+      error_type: llm_limit
+      description: O provider falha por timeout, tokens ou limite de contexto.
+    - id: system_environment_error
+      target_module: system
+      error_type: environment_error
+      description: O simulador ou armazenamento viola uma transição válida do ambiente.
