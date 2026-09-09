@@ -905,9 +905,6 @@ class ErrorRecoveryDatasetService:
                             spec.brief,
                             benign_count=requested,
                             malicious_count=0,
-                            benign_response_count=0,
-                            malicious_response_count=0,
-                            questionnaire_evaluator=False,
                             research_front=ResearchFront.ERROR_RECOVERY,
                             experiment_profile=experiment.name,
                         )

@@ -516,3 +516,16 @@ async def test_runner_expands_cached_baselines_without_calling_scenario_service(
         len({item["fault_id"] for item in items}) == TEST_EXPANDED_BASELINES
         for items in by_parent.values()
     )
+
+
+def test_legacy_front_a_checkpoints_drop_only_empty_security_fields():
+    original = _scenario(1, "legacy-front-a")
+    payload = original.model_dump(mode="json")
+    payload.update(response_batches=[], evaluation_executions=[])
+    loaded = ScenarioRun.model_validate(payload)
+    assert loaded == original
+    assert "response_batches" not in loaded.model_dump()
+    assert "evaluation_executions" not in loaded.model_dump()
+    payload["response_batches"] = [{"case_id": "security-case"}]
+    with pytest.raises(ValueError, match="RecruitSecBench"):
+        ScenarioRun.model_validate(payload)

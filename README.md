@@ -1,147 +1,144 @@
-# Scenario Emulator
+# Scenario Emulator · Frente A
 
-Emulador de cenários de recrutamento do PDC-PDAI. O projeto gera trajetórias
-controladas para dois trabalhos de pesquisa independentes, construídos sobre a
-mesma pipeline de agentes:
+🇧🇷 **Português** · [🇺🇸 English](README.en.md)
 
-| Trabalho | Objetivo | Perfil | Documentação |
-|---|---|---|---|
-| **RecruitSecBench** | Avaliar prompt injection, recusas indevidas e a robustez do avaliador | [`security.yaml`](configs/fronts/security.yaml) | [Guia do RecruitSecBench](docs/recruitsecbench.md) |
-| **Error Recovery** | Gerar trajetórias e falhas controladas para diagnóstico pelo AgentDebug-RH | [`error_recovery.yaml`](configs/fronts/error_recovery.yaml) | [Guia de Error Recovery](docs/error-recovery.md) |
+Simulador de falhas em agentes de recrutamento. Gera questionários, registra
+trajetórias de execução e constrói datasets controlados para avaliar o
+**AgentDebug-RH**, responsável por localizar a falha crítica e propor uma correção.
 
-Os perfis mantêm experimentos e artefatos separados sem duplicar os agentes,
-schemas e serviços compartilhados.
-
-## Visão geral
+[Começar](#começar) · [Guia da Frente A](docs/error-recovery.md) ·
+[Desenvolvimento](docs/error-recovery.md#arquitetura-e-desenvolvimento) · [Catálogo de falhas](docs/fault-injection-catalog.md) ·
+[Contrato de dados](docs/data-contracts/agentdebug.md)
 
 ```mermaid
 flowchart LR
-    B[Briefing da vaga] --> J[Descrição da vaga]
-    J --> C[Comandos 1:N]
-    C --> Q[Gerador de questionário]
-    Q --> S[RecruitSecBench<br/>respostas, ataques e avaliação]
-    Q --> E[Error Recovery<br/>checkpoints, falhas e diagnóstico]
+    V[Briefing da vaga] --> J[Vaga estruturada]
+    J --> C[Comandos do coordenador]
+    C --> Q[Agente de questionários]
+    Q --> B[Baselines e checkpoints]
+    B --> F[Injeção controlada de falhas]
+    F --> T[Trajetórias públicas]
+    F --> L[Rótulos e proveniência separados]
+    T --> D[Frente B: AgentDebug-RH]
 ```
 
-O emulador oferece:
+O experimento de segurança de questionários, com geração de respostas, avaliação,
+API e documentação próprias, está no [RecruitSecBench](https://github.com/PDC-PDAI/recruitSecBench).
+Este repo contém o simulador e os datasets de diagnóstico da Frente A.
 
-- geração estruturada de vagas, comandos e questionários;
-- trajetórias ReAct com proveniência e checkpoints por etapa;
-- exportação em JSON, JSONL e no contrato `Trajectory` do AgentDebug-RH;
-- tracing opcional e prompts versionados no Langfuse;
-- API HTTP com persistência SQLite, OpenAPI, Swagger UI e ReDoc.
+## Começar
 
-## Início rápido
-
-Pré-requisitos: Git, Python 3.12 ou superior, [`uv`](https://docs.astral.sh/uv/)
-e acesso a um modelo OpenAI/compatível ou a uma instalação local do Ollama.
+Requisitos: **Python 3.12+**, Git, `uv` e um provider de LLM configurado para gerar
+novas baselines. Testes e validação de configurações funcionam sem LLM.
 
 ```bash
 git clone https://github.com/PDC-PDAI/scenario-emulator.git
 cd scenario-emulator
-uv sync
+uv sync --locked
 cp .env.example .env
 ```
 
-Configure um provider no `.env`. Exemplo com OpenAI:
+Edite o `.env` com seu provider. Exemplo:
 
 ```dotenv
 LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-proj-...
+OPENAI_API_KEY=your-key
 OPENAI_MODEL=gpt-5-mini
 ```
 
-Ou com Ollama local:
+Para Ollama, configure `LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL` e `OLLAMA_MODEL`
+conforme o [.env.example](.env.example). Langfuse é opcional; sem credenciais,
+o runtime usa os prompts locais.
 
 ```bash
-ollama pull qwen3:8b
-ollama serve
-```
-
-```dotenv
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3:8b
-OLLAMA_ENABLE_THINKING=true
-```
-
-Valide a instalação e os perfis sem chamar um modelo:
-
-```bash
-uv run scenario-emulator --help
-uv run scenario-emulator validate-profile configs/fronts/security.yaml
+# Verificação offline
 uv run scenario-emulator validate-profile configs/fronts/error_recovery.yaml
-```
+uv run pytest -q
 
-## Executando cada trabalho
-
-RecruitSecBench:
-
-```bash
-uv run scenario-emulator run \
-  --profile configs/fronts/security.yaml \
-  --brief "Vaga sênior de backend Python, FastAPI e PostgreSQL"
-```
-
-Veja os modos de ataque, os oráculos e o fluxo do avaliador no
-[guia do RecruitSecBench](docs/recruitsecbench.md).
-
-Error Recovery:
-
-```bash
+# Uma baseline real; chama o provider configurado
 uv run scenario-emulator run \
   --profile configs/fronts/error_recovery.yaml \
-  --brief "Vaga sênior de backend Python, FastAPI e PostgreSQL"
+  --brief "Vaga sênior de backend Python, FastAPI e PostgreSQL" \
+  --benign 1
 ```
 
-Veja o contrato de trajetória, a campanha de falhas e a integração com o
-AgentDebug-RH no [guia de Error Recovery](docs/error-recovery.md).
+`error_recovery` é o perfil padrão, inclusive sem `--profile`. Ele gera três
+comandos benignos. A geração de respostas, o avaliador e sua API HTTP pertencem
+ao RecruitSecBench e não estão incluídos aqui.
 
-Cada perfil define seu próprio diretório em `outputs/` e salva, quando aplicável:
+## Reproduzir as campanhas
+
+| Configuração | Resultado planejado | Dependência |
+|---|---|---|
+| [100 casos](configs/campaigns/error-recovery-front-b-100.yaml) | Quatro classes de `action` | Novas baselines via LLM |
+| [220 casos](configs/campaigns/error-recovery-front-b-220.yaml) | 20 casos por classe, 11 classes | Novas baselines via LLM |
+| [1.100 casos](configs/campaigns/error-recovery-front-b-1100.yaml) | 100 casos por classe; cinco falhas distintas por baseline | Baselines privadas da campanha de 220; expansão offline |
+| [1.200 casos v2](docs/dataset-v2-success-controls.md) | 1.100 falhas + 100 controles revisados | Pacote anterior, auditoria e controles aprovados |
+
+```bash
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/error-recovery-front-b-220.yaml \
+  --max-parallel 10
+
+# Depois de concluir a coleta de 220 baselines:
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/error-recovery-front-b-1100.yaml
+```
+
+As mutações são aplicadas sobre checkpoints salvos de execuções reais. Elas são
+**injeções sintéticas em trajetórias**, não novas execuções do agente sob falha.
+Uma nova coleta com LLM reproduz o procedimento, mas não garante textos idênticos.
+O clone não inclui os datasets históricos de `outputs/`.
 
 ```text
-outputs/<trabalho>/
-├── scenario.json
-├── benchmark.jsonl
-├── agent-debug.jsonl
-└── trajectories/
+outputs/<campanha>/
+├── front-b-input.jsonl   # entrada agregada para o detector
+├── front-b-inputs/       # um JSON por trajetória
+├── labels.json          # ground truth; somente para avaliação
+└── private/             # baselines, checkpoints e proveniência
 ```
 
-Flags da CLI podem sobrescrever as quantidades e os caminhos definidos no YAML.
+Mantenha rótulos fora da entrada do detector e agrupe derivados da mesma baseline
+no mesmo split. Para medir falsos positivos com os controles v2, consulte o
+[protocolo de avaliação cega](docs/dataset-v2-success-controls.md#como-avaliar-falsos-positivos).
 
-## Langfuse
+## Integração com AgentDebug-RH
 
-A integração é opcional. Sem as variáveis `LANGFUSE_*`, os prompts locais são
-usados e os artefatos continuam sendo salvos. Depois de configurar o projeto no
-`.env`, publique os prompts no label definido por `LANGFUSE_SYNC_LABEL`:
+O [exemplo autocontido de `invalid_action`](examples/error_recovery/invalid_action/README.md)
+funciona sem os datasets históricos. A Frente A produz o contrato `Trajectory`;
+a Frente B gera o diagnóstico; o re-rollout pertence à Frente C. Este repo não
+executa recuperação nem demonstra ganho após correção.
 
-```bash
-uv run scenario-emulator sync-prompts
-```
-
-Não envie credenciais, dados pessoais ou prompts sensíveis para o repositório,
-issues ou traces.
-
-## API HTTP
-
-```bash
-uv run scenario-emulator serve --host 0.0.0.0 --port 8000
-```
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI: `http://localhost:8000/openapi.json`
-
-O estado é salvo por padrão em `data/scenario-emulator.db`. A API ainda não tem
-autenticação própria; não exponha a porta diretamente na internet. O fluxo de
-submissões e avaliação está detalhado no [guia do RecruitSecBench](docs/recruitsecbench.md#api-e-submissões-manuais).
-
-## Desenvolvimento
+## Desenvolver
 
 ```bash
 uv run ruff check .
-uv run pytest
+uv run pytest -q
 ```
 
-Os testes não chamam modelos nem enviam traces. Materiais auxiliares de pesquisa
-ficam em `.references/` e não fazem parte da distribuição do projeto.
+| Diretório | Responsabilidade |
+|---|---|
+| `src/services/questionnaire/` | Agente, tools e validação do formulário |
+| `src/services/dataset/` | Coleta retomável, mutações e exportação de campanhas |
+| `src/services/agent_debug/` | Conversão e anotações de trajetórias |
+| `src/schemas/` | Contratos Pydantic e taxonomia |
+| `src/prompts/` | Prompts locais e resolução opcional pelo Langfuse |
+| `scripts/` | Sincronização de prompts e preparação de controles v2 |
+| `tests/` | Contratos, integração, falhas e persistência sem chamadas a modelos |
+
+Veja a [seção de desenvolvimento](docs/error-recovery.md#arquitetura-e-desenvolvimento)
+para adicionar uma falha ou alterar contratos. Checkpoints antigos da Frente A
+com campos de segurança vazios continuam legíveis; cenários de segurança devem
+ser abertos no RecruitSecBench.
+
+## Documentação bilíngue
+
+| Assunto | Português | English |
+|---|---|---|
+| Execução e campanhas | [Guia](docs/error-recovery.md) | [Guide](docs/error-recovery.en.md) |
+| Arquitetura e desenvolvimento | [Guia](docs/error-recovery.md#arquitetura-e-desenvolvimento) | [Guide](docs/error-recovery.en.md#architecture-and-development) |
+| Injeção de falhas | [Catálogo](docs/fault-injection-catalog.md) | [Catalog](docs/fault-injection-catalog.en.md) |
+| Contrato A → B | [Contrato](docs/data-contracts/agentdebug.md) | [Contract](docs/data-contracts/agentdebug.en.md) |
+| Controles de sucesso v2 | [Protocolo](docs/dataset-v2-success-controls.md) | [Protocol](docs/dataset-v2-success-controls.en.md) |
+
+Documentação preparada para a [issue #20](https://github.com/PDC-PDAI/agentdebug-rh/issues/20).

@@ -1,5 +1,7 @@
 # Error Recovery
 
+🇧🇷 **Português** · [🇺🇸 English](error-recovery.en.md)
+
 O trabalho de Error Recovery produz trajetórias reproduzíveis para localizar e
 diagnosticar falhas de agentes com o AgentDebug-RH. O Scenario Emulator funciona
 como a Frente A, que gera e anota os dados; o AgentDebug-RH funciona como a Frente
@@ -206,3 +208,89 @@ confirme que o relatório mostra zero chamadas com falha e que
 `module_analyses[*].status` é `ok`.
 
 [Voltar ao README principal](../README.md)
+
+## Arquitetura e desenvolvimento
+
+## Responsabilidades
+
+A CLI em `src/cli.py` carrega perfis YAML estritos e aplica overrides antes de
+chamar os serviços. Caminhos de perfis e campanhas são relativos ao diretório
+de trabalho: execute os exemplos a partir da raiz do repo.
+
+| Camada | Arquivos principais | Contrato |
+|---|---|---|
+| Configuração | `src/settings.py`, `src/services/experiment/profile.py` | `.env`, provider, perfis e capacidades |
+| Preparação | `src/services/job_description/service.py`, `src/services/coordinator_prompt/service.py` | Vaga estruturada e comandos |
+| Agente observado | `src/services/questionnaire/service.py` | Consulta da vaga e tool terminal de formulário/falha |
+| Captura | `src/services/observability/react.py`, `src/agents/utils.py` | Eventos, tool calls e mensagens normalizadas |
+| Exportação | `src/services/agent_debug/service.py` | `AgentDebugTrajectory` e anotação determinística |
+| Campanhas | `src/services/dataset/service.py` | Baselines, injeções, retomada, labels e proveniência |
+| Contratos | `src/schemas/agent_debug/schema.py`, `src/schemas/dataset/schema.py` | Taxonomia, steps e configurações válidas |
+
+`ScenarioService.run` encadeia a geração de baselines da Frente A. Os serviços
+de respostas, avaliação de segurança e sua API ficam somente no RecruitSecBench.
+
+### Execução real e construção do dataset
+
+A execução real usa Agno e tools locais, produzindo checkpoints e a conversa
+normalizada em `messages`. Cada ciclo de decisão com tool call e resposta ocupa
+um step; eventos de infraestrutura não viram steps independentes.
+
+`ErrorRecoveryDatasetService` coleta baselines aprovadas pelo oráculo e encerradas
+com `salvar_formulario`. A coleta usa lotes limitados, persiste progresso e repõe
+baselines que falham. Depois, `inject_fault` transforma cópias dos checkpoints:
+não provoca uma nova interação do modelo com o ambiente alterado.
+
+A expansão offline reutiliza os batches em `private/baseline-scenarios` do dataset
+anterior. Sem esses arquivos, o YAML de 1.100 casos não pode reconstruir a campanha
+histórica a partir apenas dos JSONLs públicos. O re-rollout não é executado aqui.
+
+### Alterar uma falha
+
+1. Verifique o par módulo/tipo na taxonomia do schema e no contrato da Frente B.
+2. Declare o modo no perfil `configs/fronts/error_recovery.yaml`.
+3. Implemente a mutação em `src/services/dataset/service.py`, incluindo variantes
+   e proveniência privada. Preserve os steps anteriores à causa crítica quando aplicável.
+4. Atualize a campanha que deverá usar a classe e o catálogo nas duas línguas.
+5. Teste o efeito observável, step crítico, alinhamento causal e separação de labels.
+
+Não crie `memory` ou `reflection` pós-processados: o agente atual não emite esses
+módulos. Um futuro produtor precisa emiti-los e demonstrar seu efeito nas decisões.
+
+### Alterar contratos ou prompts
+
+Mantenha índices contíguos a partir de 1, envelopes `raw_output` completos e
+`messages` normalizadas. Uma modificação do schema exige conferir o consumidor
+AgentDebug-RH e atualizar o exemplo autocontido. `failure_annotation` é ground
+truth experimental; diagnóstico de causa raiz é saída da Frente B.
+
+Prompts locais ficam em `src/prompts/raw_prompts.py`; Langfuse pode substituí-los
+por nome e label. Registre as versões realmente usadas quando comparar campanhas.
+Mudanças de prompt/provider alteram a distribuição das baselines, mesmo com o
+mesmo YAML. Nenhuma seed garante repetição exata do conteúdo de um LLM remoto.
+
+### Verificar
+
+```bash
+uv run ruff check .
+uv run pytest -q
+uv run scenario-emulator validate-profile configs/fronts/error_recovery.yaml
+uv run scenario-emulator validate-dataset-campaign configs/campaigns/error-recovery-front-b-220.yaml
+```
+
+`test_dataset_campaign.py` cobre injeção, variantes, exportação e retomada;
+`test_agent_debug_contract.py` e `test_agent_messages.py` cobrem os contratos;
+`test_error_recovery_examples.py` valida o fixture; os testes de controles v2
+cobrem auditoria e integridade da seleção. Os modelos são substituídos nos testes.
+
+Os scripts de controles v2 e sua documentação representam trabalho local já
+existente na preparação desta separação. Não são parte do port de segurança.
+Consulte o [protocolo v2](dataset-v2-success-controls.md) para fontes e limitações.
+
+### Diagnóstico local
+
+`AGNO_DEBUG=true AGNO_DEBUG_LEVEL=2` habilita logs detalhados; checkpoints não
+precisam dessa opção. Sem Langfuse, JSONs locais continuam sendo os artefatos de
+intercâmbio. Se a campanha termina com código 2, confira o resumo e as tentativas
+salvas: a meta planejada ainda não foi completada. Use um novo diretório para
+smokes com `--limit`; não reutilize sua atribuição privada na campanha completa.

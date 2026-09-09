@@ -63,13 +63,13 @@ class FakeCoordinatorService:
         scenario_id: str,
     ) -> CoordinatorPromptBatch:
         assert job.id == "job-1"
-        assert (benign_count, malicious_count) == (1, 1)
+        assert (benign_count, malicious_count) == (_QUESTIONNAIRE_COUNT, 0)
         assert scenario_id.startswith("scenario-")
         return CoordinatorPromptBatch(
             job_description_id=job.id,
             prompts=[
                 _prompt(sequence=1, intent=PromptIntent.BENIGN),
-                _prompt(sequence=2, intent=PromptIntent.MALICIOUS),
+                _prompt(sequence=2, intent=PromptIntent.BENIGN),
             ],
         )
 
@@ -81,6 +81,8 @@ class FakeQuestionnaireService:
         coordinator_prompt: CoordinatorPrompt,
         *,
         scenario_id: str,
+        experiment_tags: list[str] | None = None,
+        experiment_metadata: dict[str, str | None] | None = None,
     ) -> QuestionnaireExecution:
         assert job.id == "job-1"
         assert scenario_id.startswith("scenario-")
@@ -109,7 +111,7 @@ async def test_pipeline_logs_each_stage_with_canonical_tags(monkeypatch):
         questionnaire_service=FakeQuestionnaireService(),  # type: ignore[arg-type]
     )
 
-    result = await service.run("Vaga backend Python", benign_count=1, malicious_count=1)
+    result = await service.run("Vaga backend Python", benign_count=2, malicious_count=0)
 
     started = [
         call.kwargs
@@ -142,7 +144,7 @@ async def test_pipeline_logs_each_stage_with_canonical_tags(monkeypatch):
     ]
     assert started[2]["questionnaire_index"] == 1
     assert started[2]["questionnaire_total"] == _QUESTIONNAIRE_COUNT
-    assert started[3]["prompt_intent"] == "malicious"
+    assert started[3]["prompt_intent"] == "benign"
     assert len(result.executions) == _QUESTIONNAIRE_COUNT
 
     completed = [

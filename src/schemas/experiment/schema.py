@@ -2,71 +2,27 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.schemas.agent_debug.schema import ErrorModule, ErrorType, is_valid_error_pair
 
-_MAX_RESPONSES_PER_QUESTIONNAIRE = 20
-_MAX_EVALUATIONS_PER_SCENARIO = 200
-
 
 class ResearchFront(str, Enum):
-    SECURITY = "security"
     ERROR_RECOVERY = "error_recovery"
-
-
-class ResearchCapability(str, Enum):
-    QUESTIONNAIRE_EVALUATOR = "questionnaire_evaluator"
-    ERROR_RECOVERY = "error_recovery"
-
-
-_FRONT_CAPABILITIES: dict[ResearchFront, frozenset[ResearchCapability]] = {
-    ResearchFront.SECURITY: frozenset({ResearchCapability.QUESTIONNAIRE_EVALUATOR}),
-    ResearchFront.ERROR_RECOVERY: frozenset({ResearchCapability.ERROR_RECOVERY}),
-}
-
-
-def research_front_supports(front: ResearchFront, capability: ResearchCapability) -> bool:
-    """Informa as capacidades habilitadas por uma frente de pesquisa."""
-    return capability in _FRONT_CAPABILITIES[front]
 
 
 class PipelineProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    benign_commands: int = Field(default=3, ge=0, le=100)
-    malicious_commands: int = Field(default=3, ge=0, le=100)
-    benign_responses: int = Field(default=1, ge=0, le=20)
-    malicious_responses: int = Field(default=1, ge=0, le=20)
-    questionnaire_evaluator: bool = True
-
-    @model_validator(mode="after")
-    def validate_counts(self) -> PipelineProfile:
-        command_total = self.benign_commands + self.malicious_commands
-        response_total = self.benign_responses + self.malicious_responses
-        if command_total < 1:
-            raise ValueError("O perfil precisa gerar ao menos um comando.")
-        if response_total > _MAX_RESPONSES_PER_QUESTIONNAIRE:
-            raise ValueError("O perfil aceita no máximo 20 respostas por questionário.")
-        if command_total * response_total > _MAX_EVALUATIONS_PER_SCENARIO:
-            raise ValueError("O perfil aceita no máximo 200 avaliações potenciais.")
-        if not self.questionnaire_evaluator and response_total:
-            raise ValueError(
-                "Sem questionnaire_evaluator, benign_responses e malicious_responses "
-                "devem ser zero."
-            )
-        return self
+    benign_commands: int = Field(default=3, ge=1, le=100)
+    malicious_commands: Literal[0] = 0
 
 
 def validate_front_pipeline(front: ResearchFront | None, pipeline: PipelineProfile) -> None:
-    """Valida invariantes da pipeline que também se aplicam a chamadores diretos."""
-    if (
-        front is not None
-        and pipeline.questionnaire_evaluator
-        and not research_front_supports(front, ResearchCapability.QUESTIONNAIRE_EVALUATOR)
-    ):
-        raise ValueError("questionnaire_evaluator só pode ser habilitado na frente security.")
+    if front not in (None, ResearchFront.ERROR_RECOVERY):
+        raise ValueError("Only error_recovery is supported; use RecruitSecBench for security.")
 
 
 class ArtifactProfile(BaseModel):
@@ -160,13 +116,8 @@ class ExperimentProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_front(self) -> ExperimentProfile:
-        supports_error_recovery = research_front_supports(
-            self.front, ResearchCapability.ERROR_RECOVERY
-        )
-        if supports_error_recovery and self.error_recovery is None:
+        if self.error_recovery is None:
             raise ValueError("A frente error_recovery exige a seção error_recovery.")
-        if not supports_error_recovery and self.error_recovery is not None:
-            raise ValueError("A frente security não deve declarar error_recovery.")
         validate_front_pipeline(self.front, self.pipeline)
         if (
             self.error_recovery is not None

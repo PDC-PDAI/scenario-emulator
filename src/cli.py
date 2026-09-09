@@ -15,7 +15,6 @@ from src.schemas.experiment.schema import (
 from src.services.agent_debug.service import save_trajectory_files, scenario_trajectories
 from src.services.experiment.profile import load_experiment_profile
 from src.services.scenario.service import ScenarioService
-from src.settings import settings
 
 _T = TypeVar("_T")
 
@@ -23,7 +22,7 @@ _T = TypeVar("_T")
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scenario-emulator",
-        description="Executa a Frente A para AgentDebug-RH e RecruitSecBench.",
+        description="Gera trajetórias e falhas controladas da Frente A para AgentDebug-RH.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -34,26 +33,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--profile",
         type=Path,
-        help="Perfil YAML da frente; flags explícitas sobrescrevem seus valores.",
+        default=Path(__file__).parent / "profiles" / "error_recovery.yaml",
+        help="Perfil YAML da Frente A; flags explícitas sobrescrevem seus valores.",
     )
     run.add_argument("--benign", type=int, help="Quantidade de comandos benignos.")
-    run.add_argument("--malicious", type=int, help="Quantidade de comandos malignos.")
-    run.add_argument(
-        "--benign-responses",
-        type=int,
-        help="Respostas benignas por questionário gerado.",
-    )
-    run.add_argument(
-        "--malicious-responses",
-        type=int,
-        help="Respostas com prompt injection por questionário gerado.",
-    )
-    run.add_argument(
-        "--questionnaire-evaluator",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Habilita ou desabilita a campanha de respostas e avaliação.",
-    )
+    run.add_argument("--malicious", type=int, choices=[0], help="A Frente A gera apenas baselines benignas.")
     run.add_argument("--output", type=Path, help="Arquivo JSON completo do cenário.")
     run.add_argument(
         "--jsonl",
@@ -113,15 +97,6 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument("--trace-id", required=True, help="ID hexadecimal do trace.")
     export.add_argument("--output", type=Path, help="Arquivo JSON; sem ele, imprime no stdout.")
 
-    serve = commands.add_parser("serve", help="Inicia a API HTTP com Swagger em /docs.")
-    serve.add_argument("--host", default=settings.API_HOST, help="Interface de rede da API.")
-    serve.add_argument("--port", type=int, default=settings.API_PORT, help="Porta da API.")
-    serve.add_argument(
-        "--reload",
-        action=argparse.BooleanOptionalAction,
-        default=settings.API_RELOAD,
-        help="Recarrega a API ao alterar arquivos (apenas desenvolvimento).",
-    )
     return parser
 
 
@@ -134,27 +109,15 @@ def _pick(explicit: _T | None, profile_value: _T | None, default: _T) -> _T:
 
 
 def _apply_profile(args: argparse.Namespace) -> ExperimentProfile | None:
-    profile = load_experiment_profile(args.profile) if args.profile else None
+    profile = load_experiment_profile(
+        args.profile or Path(__file__).parent / "profiles" / "error_recovery.yaml"
+    )
     pipeline = profile.pipeline if profile else None
-    args.questionnaire_evaluator = _pick(
-        getattr(args, "questionnaire_evaluator", None),
-        pipeline.questionnaire_evaluator if pipeline else None,
-        True,
-    )
     args.benign = _pick(args.benign, pipeline.benign_commands if pipeline else None, 3)
-    args.malicious = _pick(args.malicious, pipeline.malicious_commands if pipeline else None, 3)
-    args.benign_responses = _pick(
-        args.benign_responses, pipeline.benign_responses if pipeline else None, 1
-    )
-    args.malicious_responses = _pick(
-        args.malicious_responses, pipeline.malicious_responses if pipeline else None, 1
-    )
+    args.malicious = _pick(args.malicious, pipeline.malicious_commands if pipeline else None, 0)
     resolved_pipeline = PipelineProfile(
         benign_commands=args.benign,
         malicious_commands=args.malicious,
-        benign_responses=args.benign_responses,
-        malicious_responses=args.malicious_responses,
-        questionnaire_evaluator=args.questionnaire_evaluator,
     )
     validate_front_pipeline(profile.front if profile else None, resolved_pipeline)
     if profile:
@@ -172,9 +135,6 @@ async def _run(args: argparse.Namespace) -> int:
         brief,
         benign_count=args.benign,
         malicious_count=args.malicious,
-        benign_response_count=args.benign_responses,
-        malicious_response_count=args.malicious_responses,
-        questionnaire_evaluator=args.questionnaire_evaluator,
         research_front=profile.front if profile else None,
         experiment_profile=profile.name if profile else None,
     )
@@ -204,13 +164,6 @@ async def _run(args: argparse.Namespace) -> int:
         print(f"{len(paths)} trajetórias salvas em {args.trajectories_dir}")
     passed = sum(item.benchmark_passed for item in result.executions)
     print(f"Resultado: {passed}/{len(result.executions)} trajetórias passaram no oráculo.")
-    evaluation_passed = sum(
-        bool(item.oracle and item.oracle.passed) for item in result.evaluation_executions
-    )
-    print(
-        "Avaliações: "
-        f"{evaluation_passed}/{len(result.evaluation_executions)} passaram no oráculo defensivo."
-    )
     flush_langfuse()
     return 0
 
@@ -229,18 +182,6 @@ def _export_trace(args: argparse.Namespace) -> int:
         print(f"Trace salvo em {args.output}")
     else:
         print(rendered)
-    return 0
-
-
-def _serve(args: argparse.Namespace) -> int:
-    import uvicorn  # noqa: PLC0415
-
-    uvicorn.run(
-        "src.api.app:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-    )
     return 0
 
 
@@ -284,7 +225,7 @@ def main() -> int:  # noqa: PLR0911 - dispatcher explícito mantém os comandos 
     parser = _parser()
     args = parser.parse_args()
     if args.command == "sync-prompts":
-        from scripts.sync_langfuse_prompts import sync_prompts  # noqa: PLC0415
+        from src.prompts.sync import sync_prompts  # noqa: PLC0415
 
         return sync_prompts()
     if args.command == "validate-profile":
@@ -306,8 +247,6 @@ def main() -> int:  # noqa: PLR0911 - dispatcher explícito mantém os comandos 
             flush_langfuse()
     if args.command == "export-trace":
         return _export_trace(args)
-    if args.command == "serve":
-        return _serve(args)
     try:
         args.experiment_profile = _apply_profile(args)
     except ValueError as exc:

@@ -1,5 +1,7 @@
 # Catálogo de injeção de falhas
 
+🇧🇷 **Português** · [🇺🇸 English](fault-injection-catalog.en.md)
+
 Este documento descreve como o Scenario Emulator transforma uma trajetória
 baseline bem-sucedida em uma trajetória controlada com uma única causa crítica.
 O objetivo é produzir entradas avaliáveis pela Frente B sem expor o rótulo no

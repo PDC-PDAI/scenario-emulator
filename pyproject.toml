@@ -1,12 +1,11 @@
 [project]
 name = "scenario-emulator"
 version = "0.1.0"
-description = "Emulador da Frente A para AgentDebug-RH e RecruitSecBench"
+description = "Simulador de falhas da Frente A para AgentDebug-RH"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agno>=2.6.5,<3",
-    "fastapi>=0.116,<0.117",
     "langdetect>=1.0.9",
     "langfuse>=4.14.0,<5",
     "ollama>=0.6.2",
@@ -16,7 +15,6 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "structlog>=24.4",
-    "uvicorn[standard]>=0.35,<0.36",
 ]
 
 [project.scripts]
