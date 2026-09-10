@@ -2,9 +2,9 @@
 
 [🇧🇷 Português](dataset-v2-success-controls.md) · 🇺🇸 **English** · [Home](../README.en.md)
 
-This document translates the locally recorded v2 preparation protocol. Historical
-counts below describe that preparation, not a campaign rerun during repository
-separation. The source artifacts are not included in a clean clone.
+This document describes the v2 dataset preparation protocol. Counts below refer
+to the recorded campaign; reproducing its analysis requires the saved artifacts,
+which are not included in a clean clone.
 
 ## Composition and selection
 

@@ -22,9 +22,8 @@ flowchart LR
     T --> D[Front B: AgentDebug-RH]
 ```
 
-The questionnaire security experiment, including answer generation, evaluation,
-API, and its documentation, lives in [RecruitSecBench](https://github.com/PDC-PDAI/recruitSecBench).
-This repository contains Front A's simulator and diagnostic datasets.
+Campaigns support evaluating critical-cause localization in trajectories with
+known failures and measuring false positives with successful controls.
 
 ## Get started
 
@@ -63,8 +62,7 @@ uv run scenario-emulator run \
 ```
 
 `error_recovery` is the default profile, including when `--profile` is omitted.
-It generates three benign commands. Candidate answer generation, evaluation, and
-their HTTP API belong to RecruitSecBench and are not included here.
+It generates three benign commands to collect questionnaire-agent baselines.
 
 ## Reproduce campaigns
 
@@ -127,8 +125,7 @@ uv run pytest -q
 | `tests/` | Contracts, integration, faults, and persistence without model calls |
 
 See the [development section](docs/error-recovery.en.md#architecture-and-development)
-to add a fault or change a contract. Historical Front A checkpoints with empty
-security fields remain readable; security scenarios must be opened in RecruitSecBench.
+to add faults, change contracts and validate dataset construction.
 
 ## Bilingual documentation
 
@@ -139,5 +136,3 @@ security fields remain readable; security scenarios must be opened in RecruitSec
 | Fault injection | [Catálogo](docs/fault-injection-catalog.md) | [Catalog](docs/fault-injection-catalog.en.md) |
 | A → B contract | [Contrato](docs/data-contracts/agentdebug.md) | [Contract](docs/data-contracts/agentdebug.en.md) |
 | v2 success controls | [Protocolo](docs/dataset-v2-success-controls.md) | [Protocol](docs/dataset-v2-success-controls.en.md) |
-
-Prepared for [issue #20](https://github.com/PDC-PDAI/agentdebug-rh/issues/20).

@@ -227,8 +227,8 @@ de trabalho: execute os exemplos a partir da raiz do repo.
 | Campanhas | `src/services/dataset/service.py` | Baselines, injeções, retomada, labels e proveniência |
 | Contratos | `src/schemas/agent_debug/schema.py`, `src/schemas/dataset/schema.py` | Taxonomia, steps e configurações válidas |
 
-`ScenarioService.run` encadeia a geração de baselines da Frente A. Os serviços
-de respostas, avaliação de segurança e sua API ficam somente no RecruitSecBench.
+`ScenarioService.run` encadeia a criação da vaga, os comandos benignos e a
+execução do agente de questionários para gerar baselines da Frente A.
 
 ### Execução real e construção do dataset
 
@@ -283,9 +283,9 @@ uv run scenario-emulator validate-dataset-campaign configs/campaigns/error-recov
 `test_error_recovery_examples.py` valida o fixture; os testes de controles v2
 cobrem auditoria e integridade da seleção. Os modelos são substituídos nos testes.
 
-Os scripts de controles v2 e sua documentação representam trabalho local já
-existente na preparação desta separação. Não são parte do port de segurança.
-Consulte o [protocolo v2](dataset-v2-success-controls.md) para fontes e limitações.
+Os scripts de controles v2 auditam e selecionam trajetórias de sucesso para
+medir falsos positivos. Consulte o [protocolo v2](dataset-v2-success-controls.md)
+para fontes, critérios de seleção e limitações.
 
 ### Diagnóstico local
 

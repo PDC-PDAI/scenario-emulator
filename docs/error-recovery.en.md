@@ -154,8 +154,8 @@ examples from the repository root.
 | Campaigns | `src/services/dataset/service.py` | Baselines, injections, resume, labels, and provenance |
 | Contracts | `src/schemas/agent_debug/schema.py`, `src/schemas/dataset/schema.py` | Taxonomy, steps, and valid configuration |
 
-`ScenarioService.run` orchestrates baseline generation for `error_recovery`.
-Security generation/evaluation services and their API live only in RecruitSecBench.
+`ScenarioService.run` orchestrates job creation, benign commands and questionnaire
+agent execution to generate baselines for `error_recovery`.
 
 ### Real execution and dataset construction
 
@@ -210,9 +210,9 @@ uv run scenario-emulator validate-dataset-campaign configs/campaigns/error-recov
 `test_error_recovery_examples.py` validates the fixture; v2 control tests cover
 audit and selection integrity. Tests substitute models.
 
-The v2 control scripts/documentation were pre-existing local work when this
-separation was prepared. They are not part of the security port. See the
-[v2 protocol](dataset-v2-success-controls.en.md) for sources and limitations.
+The v2 control scripts audit and select successful trajectories for false-positive
+measurement. See the [v2 protocol](dataset-v2-success-controls.en.md) for sources,
+selection criteria and limitations.
 
 ### Local diagnosis
 
