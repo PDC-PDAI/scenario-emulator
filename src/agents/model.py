@@ -1,33 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from agno.models.openai import OpenAIChat, OpenAIResponses
 
 from src.agents.openrouter import OpenRouterChat
 from src.settings import settings
 
-ModelRole = Literal["default", "response_generator", "evaluator"]
+
+def _model_config() -> tuple[str, str]:
+    provider = settings.LLM_PROVIDER
+    model = settings.OLLAMA_MODEL if provider in {"ollama", "ceia"} else settings.OPENAI_MODEL
+    return provider, model
 
 
-def _role_config(role: ModelRole) -> tuple[str, str]:
-    if role == "response_generator":
-        provider = settings.RESPONSE_GENERATOR_LLM_PROVIDER or settings.LLM_PROVIDER
-        override = settings.RESPONSE_GENERATOR_MODEL
-    elif role == "evaluator":
-        provider = settings.EVALUATOR_LLM_PROVIDER or settings.LLM_PROVIDER
-        override = settings.EVALUATOR_MODEL
-    else:
-        provider = settings.LLM_PROVIDER
-        override = None
-    default_model = (
-        settings.OLLAMA_MODEL if provider in {"ollama", "ceia"} else settings.OPENAI_MODEL
-    )
-    return provider, override or default_model
-
-
-def build_model(role: ModelRole = "default") -> Any:
-    provider, model_id = _role_config(role)
+def build_model() -> Any:
+    provider, model_id = _model_config()
     if provider in {"openai", "openai_like"}:
         is_openrouter = bool(
             settings.OPENAI_BASE_URL and "openrouter.ai" in settings.OPENAI_BASE_URL.lower()
@@ -75,5 +63,5 @@ def get_model_identifier(model: Any) -> str:
     return str(getattr(model, "id", model))
 
 
-def configured_model_identifier(role: ModelRole = "default") -> str:
-    return _role_config(role)[1]
+def configured_model_identifier() -> str:
+    return _model_config()[1]

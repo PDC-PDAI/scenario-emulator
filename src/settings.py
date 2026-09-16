@@ -32,15 +32,6 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "qwen3:8b"
     OLLAMA_ENABLE_THINKING: bool = True
 
-    RESPONSE_GENERATOR_LLM_PROVIDER: (
-        Literal["openai", "openai_responses", "openai_like", "ollama", "ceia"] | None
-    ) = None
-    RESPONSE_GENERATOR_MODEL: str | None = None
-    EVALUATOR_LLM_PROVIDER: (
-        Literal["openai", "openai_responses", "openai_like", "ollama", "ceia"] | None
-    ) = None
-    EVALUATOR_MODEL: str | None = None
-
     # Debug verboso do Agno é opt-in: pode incluir prompts e argumentos de tools.
     AGNO_DEBUG: bool = False
     AGNO_DEBUG_LEVEL: Literal[1, 2] = 1
@@ -53,12 +44,6 @@ class Settings(BaseSettings):
     LANGFUSE_TRACING_ENABLED: bool = True
     PROMPT_CACHE_TTL_SECONDS: int = 60
     PROMPT_FETCH_TIMEOUT_SECONDS: int = 3
-
-    API_HOST: str = "127.0.0.1"
-    API_PORT: int = 8000
-    API_RELOAD: bool = False
-    API_DATABASE_PATH: Path = ROOT_DIR / "data" / "scenario-emulator.db"
-    API_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     @field_validator("AGNO_DEBUG_LEVEL", mode="before")
     @classmethod
@@ -85,9 +70,6 @@ class Settings(BaseSettings):
             and self.LANGFUSE_BASE_URL
         )
 
-    @property
-    def api_cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.API_CORS_ORIGINS.split(",") if origin.strip()]
 
 
 settings = Settings()

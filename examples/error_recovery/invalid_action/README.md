@@ -1,5 +1,7 @@
 # Error Recovery Case ER-01 — `action/invalid_action`
 
+🇧🇷 **Português** · [🇺🇸 English](README.en.md)
+
 ## Finalidade
 
 Este case verifica se a pipeline AgentDebug-RH localiza uma falha de seleção de

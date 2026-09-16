@@ -1,5 +1,7 @@
 # Contrato de dados Scenario Emulator → AgentDebug-RH
 
+🇧🇷 **Português** · [🇺🇸 English](agentdebug.en.md)
+
 Este documento registra a fronteira entre a frente A (`scenario-emulator`) e a
 frente B (`agentdebug-rh`). O schema executável da frente A está em
 `src/schemas/agent_debug/schema.py`; o consumidor mantém o schema equivalente
