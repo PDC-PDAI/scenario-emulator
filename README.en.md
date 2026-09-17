@@ -64,6 +64,84 @@ uv run scenario-emulator run \
 `error_recovery` is the default profile, including when `--profile` is omitted.
 It generates three benign commands to collect questionnaire-agent baselines.
 
+## Current campaign: 300 samples per model
+
+The [fixed campaign](configs/campaigns/front-a-fixed-300.yaml) starts with
+**Gemma 4 31B** on OpenRouter: **300 total samples, with 60 clean controls and
+240 injected faults**. Its [versioned corpus](configs/inputs/front-a-300.json)
+contains 10 jobs × 30 distinct commands. Every model receives the same jobs,
+commands, IDs, guidelines and local prompts; no LLM regenerates these inputs.
+Set `OPENROUTER_API_KEY` in `.env`, then run:
+
+```bash
+uv sync --locked
+uv run scenario-emulator validate-dataset-campaign configs/campaigns/front-a-fixed-300.yaml
+
+# Five-sample Gemma 4 31B pilot.
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --limit 5 \
+  --output-dir outputs/front-a-smoke-5/gemma-4-31b
+
+# Full 300-sample Gemma 4 31B campaign.
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml
+
+# Same inputs and parameters for the other models.
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --model google/gemma-4-26b-a4b-it
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --model qwen/qwen3.5-9b
+```
+
+Settings are fixed in YAML: `temperature=0`, `top_p=1`, `max_tokens=8192`,
+reasoning disabled, 2 transport retries, 120-second timeout and fault seed 42.
+OpenRouter receives `require_parameters=true` and `allow_fallbacks=false`.
+The model IDs are listed in the OpenRouter catalog:
+[Gemma 31B](https://openrouter.ai/google/gemma-4-31b-it),
+[Gemma 26B](https://openrouter.ai/google/gemma-4-26b-a4b-it),
+[Qwen 9B](https://openrouter.ai/qwen/qwen3.5-9b).
+**“GLM 3.5 Flash 320B” remains unconfirmed**; no substitute is selected.
+Use its confirmed API ID with `--model` later.
+
+`success_controls: 60` reserves six clean controls per job using the fixed seed.
+The remaining 240 cases have 22 instances per fault type, except
+`system_llm_limit` and `system_environment_error`, with 21 each. Every model uses
+the same control positions and fault assignment. The five-sample pilot is the
+exact prefix of the complete schedule, not a representative class distribution.
+
+Use **`detector-input.jsonl`** for blind evaluation: it contains only
+`trajectory_id`, `task_description`, `environment` and `steps`, mixing clean and
+faulty cases. Keep **`labels.json`** separate: `null` means no expected fault;
+otherwise the label contains `step`, `module` and `error_type`. Join predictions
+and labels by ID only after inference. Do not expose labels, manifests, fault
+assignments or `success` to the detector. `front-b-input.jsonl` retains the legacy
+contract including `success`; Front B may skip `success=true` cases, so use the
+blind input and analyze every case when measuring false positives.
+
+`invalid_action`, `action_format_error`, `system_tool_execution_error` and
+`system_llm_limit` rotate across compatible tool-call steps, with three variants
+per position. Early mutations truncate the trajectory at the fault. Other types
+retain their required semantic position. No steps are added merely to balance
+positions. With two-step baselines, the planned distribution is 92 faults at
+step 1 and 148 at step 2; longer baselines also expose intermediate steps for
+flexible faults. Actual counts by type, step, type × step and original trajectory
+length are written to `private/distribution.json`.
+
+Repeat the same command and output directory to resume approved checkpoints.
+Failed baselines, including successful runs with recovered natural tool errors, keep their original slot and are retried with the same input on
+the next invocation. They are never replaced with another command; exit code 2
+indicates pending samples. Each faulty case contains one injection; controls preserve the clean trajectory.
+Controls require successful lookup and save, with consistent calls and responses
+in the full message history.
+Changes to the model, settings, corpus, code, dependencies or limit require a new
+output directory. The private manifest records the protocol and hashes; rejected attempts are preserved in `private/rejected-executions/`. Keep
+pilot and full runs separate, and assign the same input IDs to the same evaluation
+split across models. Temperature zero does not guarantee identical new responses
+from hosted backends; checkpoints preserve already collected results.
+
 ## Reproduce campaigns
 
 | Configuration | Planned result | Requirement |

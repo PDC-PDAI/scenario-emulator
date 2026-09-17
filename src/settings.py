@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str | None = None
     OPENAI_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] | None = "minimal"
     OPENAI_MAX_RETRIES: int | None = None
+    OPENROUTER_API_KEY: str = ""
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen3:8b"

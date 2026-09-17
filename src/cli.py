@@ -37,7 +37,9 @@ def _parser() -> argparse.ArgumentParser:
         help="Perfil YAML da Frente A; flags explícitas sobrescrevem seus valores.",
     )
     run.add_argument("--benign", type=int, help="Quantidade de comandos benignos.")
-    run.add_argument("--malicious", type=int, choices=[0], help="A Frente A gera apenas baselines benignas.")
+    run.add_argument(
+        "--malicious", type=int, choices=[0], help="A Frente A gera apenas baselines benignas."
+    )
     run.add_argument("--output", type=Path, help="Arquivo JSON completo do cenário.")
     run.add_argument(
         "--jsonl",
@@ -68,6 +70,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Gera uma campanha retomável de entradas da Frente B.",
     )
     dataset.add_argument("--campaign", type=Path, required=True, help="Campanha YAML.")
+    dataset.add_argument("--model", help="ID OpenRouter para campanha com entradas fixas.")
     dataset.add_argument(
         "--limit",
         type=int,
@@ -195,6 +198,10 @@ def _validate_dataset_campaign(args: argparse.Namespace) -> int:
     from src.services.dataset.profile import load_dataset_campaign_profile  # noqa: PLC0415
 
     campaign = load_dataset_campaign_profile(args.campaign)
+    if campaign.fixed_inputs is not None:
+        from src.services.dataset.fixed import load_fixed_inputs  # noqa: PLC0415
+
+        load_fixed_inputs(campaign)
     print(campaign.model_dump_json(indent=2))
     return 0
 
@@ -204,6 +211,17 @@ async def _run_dataset(args: argparse.Namespace) -> int:
     from src.services.dataset.service import ErrorRecoveryDatasetService  # noqa: PLC0415
 
     campaign = load_dataset_campaign_profile(args.campaign)
+    if args.model:
+        if campaign.generation is None:
+            raise ValueError("--model exige campanha com entradas fixas e generation.")
+        from src.services.dataset.service import _safe_filename  # noqa: PLC0415
+
+        campaign = campaign.model_copy(
+            update={
+                "generation": campaign.generation.model_copy(update={"model": args.model}),
+                "output_dir": Path("outputs/front-a-300") / _safe_filename(args.model),
+            }
+        )
     summary = await ErrorRecoveryDatasetService().run(
         campaign,
         limit=args.limit,
@@ -216,7 +234,12 @@ async def _run_dataset(args: argparse.Namespace) -> int:
         f"Resultado: {summary.recorded_executions}/{summary.planned_executions} "
         "entradas da Frente B geradas."
     )
-    print(f"Dataset público: {destination / 'front-b-input.jsonl'}")
+    if campaign.fixed_inputs is not None:
+        print(f"Dataset público para o detector (sem success): {destination / 'detector-input.jsonl'}")
+        print(f"Contrato legado (contém success): {destination / 'front-b-input.jsonl'}")
+        print(f"Controles corretos: {summary.successful_controls}")
+    else:
+        print(f"Dataset público: {destination / 'front-b-input.jsonl'}")
     print(f"Rótulos separados: {destination / 'labels.json'}")
     return 0 if summary.complete else 2
 

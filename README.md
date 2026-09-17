@@ -64,6 +64,97 @@ uv run scenario-emulator run \
 `error_recovery` é o perfil padrão, inclusive sem `--profile`. Ele gera três
 comandos benignos para coletar baselines do agente de questionários.
 
+## Campanha atual: 300 amostras por modelo
+
+A [campanha fixa](configs/campaigns/front-a-fixed-300.yaml) começa pelo
+**Gemma 4 31B**, via OpenRouter: **300 amostras no total, sendo 60 corretas e
+240 com erro injetado**. São 300 comandos distintos e versionados:
+10 vagas × 30 comandos, com as mesmas vagas, IDs, diretrizes e prompts locais
+para todos os modelos. Vaga e comandos não são gerados novamente por LLM.
+O [corpus compartilhado](configs/inputs/front-a-300.json) contém as entradas completas.
+
+Configure `OPENROUTER_API_KEY` no `.env` (veja [.env.example](.env.example)) e execute:
+
+```bash
+uv sync --locked
+
+# Valida a campanha e as 300 entradas, sem chamar LLM.
+uv run scenario-emulator validate-dataset-campaign configs/campaigns/front-a-fixed-300.yaml
+
+# Piloto com apenas 5 amostras do Gemma 4 31B.
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --limit 5 \
+  --output-dir outputs/front-a-smoke-5/gemma-4-31b
+
+# Coleta completa: 300 amostras do Gemma 4 31B.
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml
+
+# Mesmas 300 entradas e mesmos parâmetros; muda somente o modelo.
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --model google/gemma-4-26b-a4b-it
+
+uv run scenario-emulator run-dataset \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --model qwen/qwen3.5-9b
+```
+
+O YAML fixa `temperature=0`, `top_p=1`, `max_tokens=8192`, reasoning desativado,
+2 retries de transporte, timeout de 120 segundos e seed 42 para distribuir as
+falhas. O OpenRouter recebe `require_parameters=true` e `allow_fallbacks=false`.
+Os IDs foram conferidos no catálogo: [Gemma 31B](https://openrouter.ai/google/gemma-4-31b-it),
+[Gemma 26B](https://openrouter.ai/google/gemma-4-26b-a4b-it) e
+[Qwen 9B](https://openrouter.ai/qwen/qwen3.5-9b).
+O nome **“GLM 3.5 Flash 320B” ainda precisa de confirmação**; nenhum outro
+modelo foi colocado no lugar. Depois de confirmar, use seu ID em `--model`.
+
+**Distribuição:** `success_controls: 60` reserva seis controles corretos por vaga,
+selecionados com seed fixa. Os 240 casos restantes recebem os onze tipos de falha:
+22 por tipo, exceto `system_llm_limit` e `system_environment_error`, com 21 cada.
+A mesma posição é controle ou recebe o mesmo tipo de erro em todos os modelos.
+O piloto usa o prefixo exato da campanha completa; cinco casos não representam
+as proporções globais.
+
+**Entrada do detector e métricas:** use `detector-input.jsonl`, que contém somente
+`trajectory_id`, `task_description`, `environment` e `steps`, misturando controles
+e falhas. `labels.json` fica separado: `null` significa nenhuma falha esperada;
+os outros valores têm `step`, `module` e `error_type`. Cruze as predições com os
+rótulos por `trajectory_id` somente depois da inferência. Não entregue ao detector
+os rótulos, o manifesto, a atribuição de falhas nem o campo `success`.
+`front-b-input.jsonl` preserva o contrato legado com `success` para integração;
+como a Frente B pode pular casos com `success=true`, use a entrada cega e processe
+todos os casos para medir falsos positivos. Veja o
+[protocolo de avaliação](docs/dataset-v2-success-controls.md#como-avaliar-falsos-positivos).
+
+**Distribuição por passo:** `invalid_action`, `action_format_error`,
+`system_tool_execution_error` e `system_llm_limit` alternam entre os passos com
+chamadas de ferramentas válidas, usando três variantes por posição. Ao injetar
+antes do fim, a trajetória é truncada no erro para não apresentar uma continuação
+bem-sucedida fictícia. Os demais tipos preservam a posição semanticamente necessária
+(por exemplo, salvar antes de consultar ou corromper o payload ao salvar).
+Não acrescentamos passos só para balancear posições. Em baselines de dois passos,
+a distribuição planejada dos 240 erros é 92 no passo 1 e 148 no passo 2; com mais passos,
+os tipos flexíveis também cobrem posições intermediárias. A distribuição real,
+inclusive tipo × passo e comprimento original, fica em `private/distribution.json`.
+
+**Reprodução e retomada:** repita o mesmo comando e diretório para reutilizar os
+checkpoints aprovados. Uma baseline que falha ou contém erro natural recuperado fica pendente com seu ID original;
+a próxima execução repete o mesmo comando, sem substituí-lo nem deslocar os rótulos.
+O processo retorna código 2 enquanto houver pendências; apenas uma baseline válida
+recebe a falha sintética. Cada caso de falha contém uma injeção; os controles preservam a trajetória correta.
+Controles exigem lookup e salvamento bem-sucedidos, com chamadas e respostas
+consistentes no histórico completo.
+Mudar modelo, parâmetros, corpus, código, dependências ou limite exige outro diretório.
+O manifesto privado registra esses dados e hashes. Tentativas rejeitadas são preservadas em `private/rejected-executions/`. Use diretórios separados para
+piloto e coleta completa. Ao avaliar, mantenha os mesmos IDs de entrada no mesmo
+split entre modelos.
+
+Temperatura 0 fixa a política de amostragem, mas o OpenRouter e seus backends não
+garantem respostas idênticas em novas chamadas. O protocolo fixa entradas,
+parâmetros e mutações; os checkpoints preservam os resultados já coletados.
+
 ## Reproduzir as campanhas
 
 | Configuração | Resultado planejado | Dependência |

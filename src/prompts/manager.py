@@ -6,6 +6,7 @@ from typing import Any
 
 import structlog
 
+from src.agents.generation import dataset_generation
 from src.clients.langfuse.client import get_langfuse_client
 from src.settings import settings
 
@@ -46,7 +47,7 @@ def resolve_prompt(
     variables: dict[str, Any] | None = None,
 ) -> ResolvedPrompt:
     variables = variables or {}
-    client = get_langfuse_client()
+    client = None if dataset_generation.get() else get_langfuse_client()
     if client is not None:
         try:
             remote = client.get_prompt(

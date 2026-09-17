@@ -62,9 +62,10 @@ class QuestionnaireService:
         scenario_id: str,
         experiment_tags: list[str] | None = None,
         experiment_metadata: dict[str, str | None] | None = None,
+        fixed_input_id: str | None = None,
     ) -> QuestionnaireExecution:
         started = time.perf_counter()
-        questionnaire_id = f"questionnaire-{uuid.uuid4()}"
+        questionnaire_id = f"questionnaire-{fixed_input_id or uuid.uuid4()}"
         trajectory_id = f"trajectory-{uuid.uuid4()}"
         langfuse_trace_id = create_langfuse_trace_id(seed=trajectory_id)
         command, guidelines = compose_coordinator_command(coordinator_prompt.command)
