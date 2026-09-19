@@ -155,6 +155,33 @@ Temperatura 0 fixa a política de amostragem, mas o OpenRouter e seus backends n
 garantem respostas idênticas em novas chamadas. O protocolo fixa entradas,
 parâmetros e mutações; os checkpoints preservam os resultados já coletados.
 
+### Retomar com um endpoint específico do OpenRouter
+
+Para fixar o roteamento após uma decisão experimental explícita, mantendo os
+comandos, os parâmetros de geração e os checkpoints já aprovados:
+
+```bash
+LANGFUSE_TRACING_ENABLED=false AGNO_DEBUG=false uv run python -m scripts.run_fixed_dataset_with_provider \
+  --campaign configs/campaigns/front-a-fixed-300.yaml \
+  --model qwen/qwen3.5-9b \
+  --provider deepinfra/bf16 \
+  --max-parallel 5
+```
+
+Para um exemplo de cinco amostras, acrescente `--limit 5 --output-dir outputs/qwen-provider-smoke-5`.
+Repita o comando completo se houver pendências. A validação dos casos e a
+atribuição de controles/falhas permanecem iguais. O roteamento é uma alteração
+operacional explícita: `order` fixa o endpoint; `require_parameters=true` e
+`allow_fallbacks=false` continuam ativos. Temperatura zero não garante a mesma
+resposta em backends diferentes.
+
+O manifesto e `private/run-config.json` registram cada fase e o roteamento por
+amostra, distinguindo os checkpoints coletados pelo roteamento padrão dos
+coletados no endpoint escolhido. A auditoria vincula cada registro ao hash do
+checkpoint e ao hash do script de retomada. Esses metadados ficam fora da entrada
+do detector. O script preserva o código-base da campanha, cujo hash protege os
+checkpoints existentes.
+
 ## Reproduzir as campanhas
 
 | Configuração | Resultado planejado | Dependência |
