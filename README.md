@@ -182,6 +182,28 @@ checkpoint e ao hash do script de retomada. Esses metadados ficam fora da entrad
 do detector. O script preserva o código-base da campanha, cujo hash protege os
 checkpoints existentes.
 
+### Retomada do Qwen com teto de US$ 1
+
+A retomada com orçamento executa uma rodada dos casos pendentes, preservando os
+checkpoints aprovados e os parâmetros da campanha:
+
+```bash
+LANGFUSE_TRACING_ENABLED=false AGNO_DEBUG=false uv run python -m scripts.run_qwen_budgeted
+```
+
+O controle fica em `private/budget-usd1-20260919.json`. Reexecutar o comando usa o
+mesmo saldo; não apague esse arquivo para retomar. Antes de cada tentativa HTTP,
+inclusive retries do cliente, reserva-se o custo máximo do contexto de 262.144
+tokens mais 8.192 tokens de saída, com margem de 10%. O request fixa DeepInfra/BF16
+e limita o preço a US$ 0,10/milhão de tokens de entrada e US$ 0,15/milhão de saída,
+sem tarifa por request. [Preços do endpoint](https://openrouter.ai/api/v1/models/qwen/qwen3.5-9b/endpoints).
+
+Ao receber o custo final do OpenRouter, o controle substitui a reserva pelo custo
+reportado com a margem. Chamadas interrompidas ou sem custo final conservam toda
+a reserva. Uma chamada que não cabe no saldo é bloqueada antes de chegar à rede.
+`run-config.json` registra o controle; o ledger fica fora da entrada do detector.
+O teto limita o gasto desta retomada, não garante aprovação dos casos pelo modelo.
+
 ## Reproduzir as campanhas
 
 | Configuração | Resultado planejado | Dependência |
