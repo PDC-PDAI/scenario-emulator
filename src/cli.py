@@ -22,80 +22,83 @@ _T = TypeVar("_T")
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scenario-emulator",
-        description="Gera trajetórias e falhas controladas da Frente A para AgentDebug-RH.",
+        description="Generate Front A trajectories and controlled faults for AgentDebug-RH.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    run = commands.add_parser("run", help="Gera vaga, comandos 1:N e questionários.")
+    run = commands.add_parser("run", help="Generate a job opening, 1:N commands, and questionnaires.")
     source = run.add_mutually_exclusive_group(required=True)
-    source.add_argument("--brief", help="Briefing textual da vaga.")
-    source.add_argument("--brief-file", type=Path, help="Arquivo UTF-8 com o briefing.")
+    source.add_argument("--brief", help="Text brief for the job opening.")
+    source.add_argument("--brief-file", type=Path, help="UTF-8 file containing the brief.")
     run.add_argument(
         "--profile",
         type=Path,
         default=Path(__file__).parent / "profiles" / "error_recovery.yaml",
-        help="Perfil YAML da Frente A; flags explícitas sobrescrevem seus valores.",
+        help="Front A YAML profile; explicit flags override its values.",
     )
-    run.add_argument("--benign", type=int, help="Quantidade de comandos benignos.")
-    run.add_argument("--malicious", type=int, choices=[0], help="A Frente A gera apenas baselines benignas.")
-    run.add_argument("--output", type=Path, help="Arquivo JSON completo do cenário.")
+    run.add_argument("--benign", type=int, help="Number of benign commands.")
+    run.add_argument(
+        "--malicious", type=int, choices=[0], help="Front A only generates benign baselines."
+    )
+    run.add_argument("--output", type=Path, help="Full scenario JSON file.")
     run.add_argument(
         "--jsonl",
         type=Path,
-        help="Arquivo JSONL opcional com um BenchmarkRecord por trajetória.",
+        help="Optional JSONL file with one BenchmarkRecord per trajectory.",
     )
     run.add_argument(
         "--agent-debug-jsonl",
         type=Path,
-        help="Arquivo JSONL no contrato Trajectory consumido pelo AgentDebug-RH.",
+        help="JSONL file in the Trajectory contract consumed by AgentDebug-RH.",
     )
     run.add_argument(
         "--trajectories-dir",
         type=Path,
-        help="Diretório onde será salvo um JSON por trajetória executada.",
+        help="Directory that receives one JSON file per executed trajectory.",
     )
 
-    commands.add_parser("sync-prompts", help="Sincroniza os prompts locais com Langfuse.")
+    commands.add_parser("sync-prompts", help="Sync the local prompts to Langfuse.")
 
     validate_profile = commands.add_parser(
         "validate-profile",
-        help="Valida e imprime a forma normalizada de um perfil YAML.",
+        help="Validate a YAML profile and print its normalized form.",
     )
-    validate_profile.add_argument("profile", type=Path, help="Arquivo YAML do perfil.")
+    validate_profile.add_argument("profile", type=Path, help="Profile YAML file.")
 
     dataset = commands.add_parser(
         "run-dataset",
-        help="Gera uma campanha retomável de entradas da Frente B.",
+        help="Generate a resumable campaign of Front B inputs.",
     )
-    dataset.add_argument("--campaign", type=Path, required=True, help="Campanha YAML.")
+    dataset.add_argument("--campaign", type=Path, required=True, help="Campaign YAML file.")
+    dataset.add_argument("--model", help="OpenRouter model ID for a fixed-input campaign.")
     dataset.add_argument(
         "--limit",
         type=int,
-        help="Limita a coleta às primeiras N trajetórias planejadas.",
+        help="Limit collection to the first N planned trajectories.",
     )
     dataset.add_argument(
         "--max-parallel",
         type=int,
-        help="Sobrescreve a quantidade de cenários executados em paralelo.",
+        help="Override the number of scenarios executed in parallel.",
     )
     dataset.add_argument(
         "--output-dir",
         type=Path,
-        help="Sobrescreve o diretório de saída da campanha.",
+        help="Override the campaign output directory.",
     )
 
     validate_campaign = commands.add_parser(
         "validate-dataset-campaign",
-        help="Valida e imprime a forma normalizada de uma campanha de dataset.",
+        help="Validate a dataset campaign and print its normalized form.",
     )
-    validate_campaign.add_argument("campaign", type=Path, help="Arquivo YAML da campanha.")
+    validate_campaign.add_argument("campaign", type=Path, help="Campaign YAML file.")
 
     export = commands.add_parser(
         "export-trace",
-        help="Exporta um trace completo do Langfuse em um único JSON.",
+        help="Export a complete Langfuse trace as a single JSON file.",
     )
-    export.add_argument("--trace-id", required=True, help="ID hexadecimal do trace.")
-    export.add_argument("--output", type=Path, help="Arquivo JSON; sem ele, imprime no stdout.")
+    export.add_argument("--trace-id", required=True, help="Hexadecimal trace ID.")
+    export.add_argument("--output", type=Path, help="JSON output file; prints to stdout when omitted.")
 
     return parser
 
@@ -139,31 +142,31 @@ async def _run(args: argparse.Namespace) -> int:
         experiment_profile=profile.name if profile else None,
     )
     if profile:
-        print(f"Perfil: {profile.name} (frente={profile.front.value})")
+        print(f"Profile: {profile.name} (front={profile.front.value})")
     rendered = result.model_dump_json(indent=2, by_alias=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
-        print(f"Cenário salvo em {args.output}")
+        print(f"Scenario saved to {args.output}")
     else:
         print(rendered)
     if args.jsonl:
         args.jsonl.parent.mkdir(parents=True, exist_ok=True)
         lines = [record.model_dump_json(by_alias=True) for record in result.benchmark_records]
         args.jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print(f"Benchmark JSONL salvo em {args.jsonl}")
+        print(f"Benchmark JSONL saved to {args.jsonl}")
     if args.agent_debug_jsonl:
         args.agent_debug_jsonl.parent.mkdir(parents=True, exist_ok=True)
         trajectories = scenario_trajectories(result)
         lines = [trajectory.model_dump_json(exclude_none=True) for trajectory in trajectories]
         args.agent_debug_jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print(f"Trajetórias AgentDebug-RH salvas em {args.agent_debug_jsonl}")
+        print(f"AgentDebug-RH trajectories saved to {args.agent_debug_jsonl}")
     if args.trajectories_dir:
         trajectories = scenario_trajectories(result)
         paths = save_trajectory_files(trajectories, args.trajectories_dir)
-        print(f"{len(paths)} trajetórias salvas em {args.trajectories_dir}")
+        print(f"{len(paths)} trajectories saved to {args.trajectories_dir}")
     passed = sum(item.benchmark_passed for item in result.executions)
-    print(f"Resultado: {passed}/{len(result.executions)} trajetórias passaram no oráculo.")
+    print(f"Result: {passed}/{len(result.executions)} trajectories passed the oracle.")
     flush_langfuse()
     return 0
 
@@ -179,7 +182,7 @@ def _export_trace(args: argparse.Namespace) -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
-        print(f"Trace salvo em {args.output}")
+        print(f"Trace saved to {args.output}")
     else:
         print(rendered)
     return 0
@@ -195,6 +198,10 @@ def _validate_dataset_campaign(args: argparse.Namespace) -> int:
     from src.services.dataset.profile import load_dataset_campaign_profile  # noqa: PLC0415
 
     campaign = load_dataset_campaign_profile(args.campaign)
+    if campaign.fixed_inputs is not None:
+        from src.services.dataset.fixed import load_fixed_inputs  # noqa: PLC0415
+
+        load_fixed_inputs(campaign)
     print(campaign.model_dump_json(indent=2))
     return 0
 
@@ -204,6 +211,17 @@ async def _run_dataset(args: argparse.Namespace) -> int:
     from src.services.dataset.service import ErrorRecoveryDatasetService  # noqa: PLC0415
 
     campaign = load_dataset_campaign_profile(args.campaign)
+    if args.model:
+        if campaign.generation is None:
+            raise ValueError("--model requires a fixed-input campaign with a generation section.")
+        from src.services.dataset.service import _safe_filename  # noqa: PLC0415
+
+        campaign = campaign.model_copy(
+            update={
+                "generation": campaign.generation.model_copy(update={"model": args.model}),
+                "output_dir": Path("outputs/front-a-300") / _safe_filename(args.model),
+            }
+        )
     summary = await ErrorRecoveryDatasetService().run(
         campaign,
         limit=args.limit,
@@ -211,17 +229,22 @@ async def _run_dataset(args: argparse.Namespace) -> int:
         output_dir=args.output_dir,
     )
     destination = args.output_dir or campaign.output_dir
-    print(f"Campanha: {campaign.name}")
+    print(f"Campaign: {campaign.name}")
     print(
-        f"Resultado: {summary.recorded_executions}/{summary.planned_executions} "
-        "entradas da Frente B geradas."
+        f"Result: {summary.recorded_executions}/{summary.planned_executions} "
+        "Front B inputs generated."
     )
-    print(f"Dataset público: {destination / 'front-b-input.jsonl'}")
-    print(f"Rótulos separados: {destination / 'labels.json'}")
+    if campaign.fixed_inputs is not None:
+        print(f"Public detector dataset (no success field): {destination / 'detector-input.jsonl'}")
+        print(f"Legacy contract (includes success): {destination / 'front-b-input.jsonl'}")
+        print(f"Clean controls: {summary.successful_controls}")
+    else:
+        print(f"Public dataset: {destination / 'front-b-input.jsonl'}")
+    print(f"Separate labels: {destination / 'labels.json'}")
     return 0 if summary.complete else 2
 
 
-def main() -> int:  # noqa: PLR0911 - dispatcher explícito mantém os comandos isolados
+def main() -> int:  # noqa: PLR0911 - an explicit dispatcher keeps the commands isolated
     parser = _parser()
     args = parser.parse_args()
     if args.command == "sync-prompts":

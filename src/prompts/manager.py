@@ -6,6 +6,7 @@ from typing import Any
 
 import structlog
 
+from src.agents.generation import dataset_generation
 from src.clients.langfuse.client import get_langfuse_client
 from src.settings import settings
 
@@ -35,7 +36,7 @@ def _render_local(name: str, template: str, variables: dict[str, Any]) -> str:
 
     rendered = _VARIABLE_RE.sub(replace, template)
     if missing:
-        raise KeyError(f"Prompt {name!r}: variáveis ausentes: {sorted(set(missing))}")
+        raise KeyError(f"Prompt {name!r}: missing variables: {sorted(set(missing))}")
     return rendered
 
 
@@ -46,7 +47,7 @@ def resolve_prompt(
     variables: dict[str, Any] | None = None,
 ) -> ResolvedPrompt:
     variables = variables or {}
-    client = get_langfuse_client()
+    client = None if dataset_generation.get() else get_langfuse_client()
     if client is not None:
         try:
             remote = client.get_prompt(
@@ -64,7 +65,7 @@ def resolve_prompt(
                 labels=tuple(remote.labels),
                 langfuse_prompt=remote,
             )
-        except Exception as exc:  # pragma: no cover - rede/serviço externo
+        except Exception as exc:  # pragma: no cover - network/external service
             logger.warning(
                 "prompt.langfuse_fallback",
                 prompt_name=name,

@@ -47,18 +47,18 @@ def extract_usage(response: Any) -> dict[str, int] | None:
 
 
 def recover_run_output(agent: Any, final_output: Any) -> Any:
-    """Devolve o RunOutput do stream ou recupera-o da sessão do agente.
+    """Return the streamed RunOutput, or recover it from the agent session.
 
-    Em erro de provider/timeout o Agno emite RunErrorEvent e encerra o stream
-    SEM entregar o RunOutput; com uma sessão configurada (InMemoryDb), o run
-    fica persistido com status=error e as mensagens até o turno da falha —
-    ``get_last_run_output()`` o resgata. Best-effort: nunca levanta.
+    On a provider error or timeout, Agno emits RunErrorEvent and closes the stream
+    WITHOUT delivering the RunOutput; with a configured session (InMemoryDb), the run
+    is persisted with status=error and the messages up to the failing turn, and
+    ``get_last_run_output()`` retrieves it. Best effort: never raises.
     """
     if final_output is not None:
         return final_output
     try:
         return agent.get_last_run_output()
-    except Exception:  # noqa: BLE001 - recuperação nunca derruba o fluxo
+    except Exception:  # noqa: BLE001 - recovery never breaks the flow
         return None
 
 
@@ -88,22 +88,22 @@ def _chat_tool_calls(raw: Any) -> list[ChatToolCall] | None:
 
 
 def clean_agent_messages(run_output: Any) -> list[ChatMessage] | None:
-    """``RunOutput.messages`` do Agno → conversa no contrato NORMALIZADO exportável.
+    """Agno ``RunOutput.messages`` → conversation in the exportable NORMALIZED contract.
 
-    O que é verbatim: a ordem das mensagens, os papéis, o conteúdo textual e os
-    ``tool_call_id`` reais — o suficiente para a Frente C reexecutar com prefixo
-    fiel. A serialização, porém, é normalizada de propósito:
+    Verbatim: message order, roles, text content and the real ``tool_call_id``
+    values, which is enough for Front C to re-execute with a faithful prefix.
+    Serialization, however, is normalized on purpose:
 
-    - argumentos de tool em JSON viram objeto (``str`` → ``dict``); a C extrai
-      ids da tarefa por chave e depende disso;
-    - renomeações: ``tool_name`` → ``name``, ``reasoning_content`` → ``reasoning``;
-    - metadados internos do Agno/provider (``metrics``, ``provider_data``,
-      timestamps) são REMOVIDOS — ``provider_data`` carrega
-      ``previous_response_id`` da Responses API e, se voltasse no prefixo de um
-      replay, faria o provider enviar só o delta e quebraria a reexecução.
+    - JSON tool arguments become objects (``str`` → ``dict``); Front C extracts
+      task IDs by key and depends on this;
+    - renames: ``tool_name`` → ``name``, ``reasoning_content`` → ``reasoning``;
+    - internal Agno/provider metadata (``metrics``, ``provider_data``,
+      timestamps) is REMOVED: ``provider_data`` carries the Responses API
+      ``previous_response_id`` and, if it came back in a replay prefix, the
+      provider would send only the delta and break the re-execution.
 
-    Devolve ``None`` quando o run não expôs mensagens (execução legada ou stub),
-    mantendo o campo ausente do contrato.
+    Returns ``None`` when the run exposed no messages (legacy execution or stub),
+    keeping the field absent from the contract.
     """
     raw = getattr(run_output, "messages", None) or []
     messages: list[ChatMessage] = []

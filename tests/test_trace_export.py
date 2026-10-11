@@ -28,5 +28,5 @@ def test_fetch_trace_export_includes_nested_observations_and_scores(monkeypatch)
 def test_fetch_trace_export_requires_langfuse_configuration(monkeypatch):
     monkeypatch.setattr(export, "get_langfuse_client", lambda: None)
 
-    with pytest.raises(RuntimeError, match="Langfuse não configurado"):
+    with pytest.raises(RuntimeError, match="Langfuse is not configured"):
         export.fetch_trace_export("trace-1")

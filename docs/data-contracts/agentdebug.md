@@ -1,34 +1,34 @@
-# Contrato de dados Scenario Emulator → AgentDebug-RH
+# Scenario Emulator → AgentDebug-RH data contract
 
-🇧🇷 **Português** · [🇺🇸 English](agentdebug.en.md)
+🇺🇸 **English** · [🇧🇷 Português](agentdebug.pt-BR.md) · [Home](../../README.md)
 
-Este documento registra a fronteira entre a frente A (`scenario-emulator`) e a
-frente B (`agentdebug-rh`). O schema executável da frente A está em
-`src/schemas/agent_debug/schema.py`; o consumidor mantém o schema equivalente
-em `src/schemas/observability/execution.py`.
+This document records the boundary between Front A (`scenario-emulator`) and
+Front B (`agentdebug-rh`). Front A's executable schema is in
+`src/schemas/agent_debug/schema.py`; the consumer keeps the equivalent schema in
+`src/schemas/observability/execution.py`.
 
-## Unidade de execução: `step`
+## Execution unit: `step`
 
-Um `step` é **um ciclo lógico de decisão do agente**, não uma operação atômica
-de infraestrutura:
+A `step` is **one logical decision cycle of the agent**, not an atomic
+infrastructure operation:
 
 ```text
-contexto do step
-  → memory/reflection, quando emitidos
+step context
+  → memory/reflection, when emitted
   → planning
   → action
   → env_response
 ```
 
-Assim, planejamento, chamada de tool e resposta da tool pertencem ao mesmo
-step. O próximo step só começa quando o agente volta a decidir com a resposta
-do ambiente anterior disponível. Em agentes de uma única inferência, como os
-geradores estruturados e o avaliador, a inferência completa é um único step.
+Planning, the tool call and the tool response therefore belong to the same step.
+The next step starts only when the agent decides again with the previous
+environment response available. In single-inference agents, such as the
+structured generators and the evaluator, the whole inference is a single step.
 
-Os índices são contíguos e 1-indexados. O step 1 não deve inventar `memory` ou
-`reflection`, pois ainda não existe histórico de execução.
+Indices are contiguous and 1-indexed. Step 1 must not invent `memory` or
+`reflection`, because there is no execution history yet.
 
-## Entrada da frente B: `AgentDebugTrajectory`
+## Front B input: `AgentDebugTrajectory`
 
 ```json
 {
@@ -51,38 +51,44 @@ Os índices são contíguos e 1-indexados. O step 1 não deve inventar `memory` 
 }
 ```
 
-Campos da trajetória:
+The values are in Portuguese, like the real trajectories.
 
-| Campo | Semântica |
-|---|---|
-| `trajectory_id` | Identificador estável para correlacionar execução, diagnóstico e trace. |
-| `task_description` | Objetivo que permite julgar o comportamento do agente. |
-| `environment` | Agente/ambiente no qual a trajetória foi produzida. |
-| `success` | Resultado da tarefa segundo o oráculo do cenário, não segundo o diagnóstico. |
-| `steps` | Ciclos de decisão na ordem em que aconteceram. |
+Trajectory fields:
 
-Campos de cada step:
+| Field | Meaning |
+| --- | --- |
+| `trajectory_id` | Stable identifier that correlates execution, diagnosis and trace. |
+| `task_description` | Goal against which the agent's behavior is judged. |
+| `environment` | Agent/environment in which the trajectory was produced. |
+| `success` | Task outcome according to the scenario oracle, not to the diagnosis. |
+| `steps` | Decision cycles in the order they happened. |
 
-| Campo | Semântica |
-|---|---|
-| `index` | Posição contígua e 1-indexada. |
-| `module_outputs` | Outputs observáveis separados por módulo. Módulos ausentes não são fabricados. |
-| `step_input` | Contexto disponível antes da decisão do step. |
-| `env_response` | Resultado do ambiente depois da ação do mesmo step. |
-| `raw_output` | Saída observável completa da qual os módulos foram extraídos. |
+Step fields:
 
-Quando o SDK fornece a saída inteira do modelo, `raw_output` preserva essa
-saída. Quando o streaming entrega planning e tool call em eventos separados, a
-frente A guarda um envelope JSON com todos os fragmentos observáveis. Ele não
-pode repetir apenas `action` se `planning` também foi extraído. O campo pode ser
-vazio somente quando a execução falha antes de produzir qualquer saída do
-agente. O envelope é sempre serializado por inteiro: produtores não o truncam
-no meio, o que preserva JSON válido mesmo quando a action contém payloads grandes.
+| Field | Meaning |
+| --- | --- |
+| `index` | Contiguous, 1-indexed position. |
+| `module_outputs` | Observable outputs split by module. Missing modules are not fabricated. |
+| `step_input` | Context available before the step's decision. |
+| `env_response` | Environment result after the same step's action. |
+| `raw_output` | Complete observable output from which the modules were extracted. |
 
-## Como os módulos analisáveis são identificados
+When the SDK provides the model's whole output, `raw_output` preserves it. When
+streaming delivers planning and the tool call as separate events, Front A stores
+a JSON envelope with every observable fragment. It must not repeat only `action`
+if `planning` was also extracted. The field may be empty only when the execution
+fails before producing any agent output. The envelope is always serialized whole:
+producers never truncate it midway, which keeps the JSON valid even when the
+action carries large payloads.
 
-A frente A não envia uma lista paralela. A frente B identifica os módulos pelas
-chaves não vazias de `module_outputs`, usando exatamente os nomes da taxonomia:
+Questionnaire trajectories may also carry normalized `messages`, the prefix
+handed to Front C. Public campaign exports deliberately keep only the five
+top-level fields above; the private originals keep the richer context.
+
+## How analyzable modules are identified
+
+Front A does not send a parallel list. Front B identifies the modules by the
+non-empty keys of `module_outputs`, using exactly the taxonomy names:
 
 - `memory`
 - `reflection`
@@ -91,48 +97,52 @@ chaves não vazias de `module_outputs`, usando exatamente os nomes da taxonomia:
 - `system`
 - `others`
 
-No estágio de análise fina atual, `ANALYZED_MODULES` contém `memory`,
-`reflection`, `planning` e `action`. `system` é atribuído a partir de evidência
-do ambiente no estágio de causa raiz; `others` é a categoria de escape. A
-taxonomia é definida pela frente B, e qualquer mudança de nomes ou pares
-`(module, error_type)` deve ser versionada e refletida no enum/validação da
-frente A antes da publicação de novas trajetórias.
+In the current fine-analysis stage, `ANALYZED_MODULES` holds `memory`,
+`reflection`, `planning` and `action`. `system` is assigned from environment
+evidence at the root-cause stage; `others` is the escape category. Front B
+defines the taxonomy, and any change to the names or to the `(module, error_type)`
+pairs must be versioned and reflected in Front A's enum/validation before new
+trajectories are published.
 
-## Ground truth e saída do diagnóstico
+## Ground truth and diagnosis output
 
-São artefatos diferentes:
+These are different artifacts:
 
-- `failure_annotation` é o ground truth determinístico do cenário, produzido
-  pela frente A para avaliação;
-- `TrajectoryDiagnosis` é a predição da frente B, com `outcome`,
-  `critical_error` e `feedback`.
+- `failure_annotation` is the scenario's deterministic ground truth, produced by
+  Front A for evaluation;
+- `TrajectoryDiagnosis` is Front B's prediction, with `outcome`,
+  `critical_error` and `feedback`.
 
-O arquivo `expected-diagnosis.json` de cada case é um **oráculo de comparação**,
-não uma cópia integral de `TrajectoryDiagnosis`. O comparador deve aplicar o
-seguinte mapeamento:
+Each case's `expected-diagnosis.json` file is a **comparison oracle**, not a
+complete copy of `TrajectoryDiagnosis`. The comparator must apply this mapping:
 
-| Oráculo do case | `TrajectoryDiagnosis` |
-|---|---|
+| Case oracle | `TrajectoryDiagnosis` |
+| --- | --- |
 | `expected_outcome` | `outcome` |
 | `critical_error.{step,module,error_type,evidence}` | `critical_error.{step,module,error_type,evidence}` |
 | `expected_feedback.target_step` | `feedback.target_step` |
 | `expected_feedback.expected_effect` | `feedback.expected_effect` |
 
-O nome `expected_effect` é deliberadamente igual ao contrato da frente B. O
-texto operacional real continua em `feedback.step_instruction`.
+The name `expected_effect` deliberately matches Front B's contract. The actual
+operational text stays in `feedback.step_instruction`.
 
-## Disponibilidade para as métricas do artigo
+## Availability for the paper's metrics
 
-| Métrica | Dados necessários | Situação atual |
-|---|---|---|
-| Step Accuracy (`S`) | step esperado × `critical_error.step` | Disponível. |
-| Step + Module (`S+M`) | step e módulo esperados × diagnosticados | Disponível. |
-| All Correct (`ALL`) | step, módulo e tipo esperados × diagnosticados | Disponível. |
-| Task Success Rate | `success` de cada execução/re-rollout | Disponível por execução. |
-| Accumulative Success Rate | ordem das tentativas e sucesso acumulado de 1 a 5 | Pendente de re-rollout e vínculo entre tentativas. |
-| Relative improvement | baseline e re-rollouts pareados para a mesma tarefa | Pendente do mesmo vínculo. |
+| Metric | Required data | Current status |
+| --- | --- | --- |
+| Step Accuracy (`S`) | expected step × `critical_error.step` | Available. |
+| Step + Module (`S+M`) | expected × diagnosed step and module | Available. |
+| All Correct (`ALL`) | expected × diagnosed step, module and type | Available. |
+| Task Success Rate | `success` of each execution/re-rollout | Available per execution. |
+| Accumulative Success Rate | attempt order and cumulative success from 1 to 5 | Pending re-rollout and the link between attempts. |
+| Relative improvement | baseline and paired re-rollouts for the same task | Pending the same link. |
 
-O contrato mínimo de trajetória basta para as métricas de localização, mas não
-basta sozinho para as métricas de recuperação. Para essas, o futuro contrato de
-rollout deverá carregar no mínimo o identificador da execução raiz, o número da
-tentativa e o ponto de retomada.
+The minimal trajectory contract is enough for the localization metrics, but not
+for the recovery metrics on its own. For those, the future rollout contract must
+carry at least the root execution identifier, the attempt number and the
+resumption point.
+
+For the v2 controls and the fixed 300-sample campaign, `labels[id] = null` means
+no expected critical failure, and a missing ID is an integrity error. Blind
+evaluation must hide `success` and the labels from the detector; see the
+[control protocol](../dataset-v2-success-controls.md#blind-evaluation).

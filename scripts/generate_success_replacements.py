@@ -1,4 +1,4 @@
-"""Gera novas execuções reais para repor controles reprovados, sem editar trajetórias."""
+"""Generate fresh real executions to replace rejected controls, without editing trajectories."""
 
 from __future__ import annotations
 
@@ -119,7 +119,8 @@ TOPICS = {
 
 
 async def generate(source: Path, output: Path, targets: dict[str, int]) -> None:
-    # Esta coleta usa somente o provider autorizado e os prompts locais versionados.
+    # This collection uses only the authorized provider and the versioned local prompts.
+    # Topics and commands below are model inputs and stay in Portuguese.
     settings.LANGFUSE_TRACING_ENABLED = False
     settings.AGNO_DEBUG = False
     settings.OPENAI_REASONING_EFFORT = "medium"

@@ -8,7 +8,7 @@ from src.schemas.agent_debug.schema import FailureAnnotation
 
 
 class BenchmarkRecord(BaseModel):
-    """Superconjunto dos campos centrais do AgentErrorBench descritos no relatório."""
+    """Superset of the core AgentErrorBench fields described in the report."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 

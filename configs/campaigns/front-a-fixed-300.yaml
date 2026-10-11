@@ -1,0 +1,93 @@
+schema_version: '1.0'
+name: front-a-fixed-300
+description: '300 entradas fixas por modelo: 60 controles corretos e 240 falhas injetadas,
+  temperatura zero. Seis controles por cenário; onze tipos com 21 ou 22 falhas e passos
+  compatíveis alternados deterministicamente.'
+experiment_profile: configs/fronts/error_recovery.yaml
+output_dir: outputs/front-a-300/google-gemma-4-31b-it
+max_parallel: 2
+max_attempts_per_scenario: 1
+baseline_batch_size: 10
+fault_ids:
+- planning_constraint_ignorance
+- planning_impossible_action
+- planning_inefficient_plan
+- action_misalignment
+- invalid_action
+- action_format_error
+- action_parameter_error
+- system_step_limit
+- system_tool_execution_error
+- system_llm_limit
+- system_environment_error
+scenarios:
+- id: software-backend-senior
+  theme: engenharia_de_software
+  seniority: senior
+  executions: 30
+  brief: Vaga sênior de engenharia de software backend com Python, FastAPI, PostgreSQL,
+    Kubernetes, observabilidade e resposta a incidentes.
+- id: frontend-junior
+  theme: engenharia_de_software
+  seniority: junior
+  executions: 30
+  brief: Vaga júnior de desenvolvimento front-end com TypeScript, React, testes, acessibilidade,
+    consumo de APIs e colaboração com produto e design.
+- id: machine-learning-pleno
+  theme: dados_e_ia
+  seniority: pleno
+  executions: 30
+  brief: Vaga plena de engenharia de machine learning com Python, treinamento e avaliação
+    de modelos, feature pipelines, MLflow, APIs e monitoramento.
+- id: sre-senior
+  theme: devops_e_sre
+  seniority: senior
+  executions: 30
+  brief: Vaga sênior de Site Reliability Engineering com Kubernetes, Terraform, SLOs,
+    Prometheus, Grafana, incident response e engenharia de confiabilidade.
+- id: cybersecurity-pleno
+  theme: ciberseguranca
+  seniority: pleno
+  executions: 30
+  brief: Vaga plena de analista de cibersegurança com SIEM, gestão de vulnerabilidades,
+    resposta a incidentes, IAM, cloud security e comunicação de riscos.
+- id: product-manager-senior
+  theme: produto_e_ux
+  seniority: senior
+  executions: 30
+  brief: Vaga sênior de Product Manager para produto SaaS B2B, responsável por discovery,
+    métricas, priorização, experimentos, roadmap e alinhamento com engenharia e vendas.
+- id: enterprise-sales-senior
+  theme: vendas
+  seniority: senior
+  executions: 30
+  brief: Vaga sênior de vendas enterprise de software B2B, com prospecção consultiva,
+    negociação complexa, gestão de pipeline, CRM e relacionamento com executivos.
+- id: customer-support-junior
+  theme: atendimento_ao_cliente
+  seniority: junior
+  executions: 30
+  brief: Vaga júnior de atendimento ao cliente em operação omnichannel, com registro
+    em CRM, resolução de chamados, comunicação escrita e acompanhamento de SLA.
+- id: finance-compliance-pleno
+  theme: financas_e_compliance
+  seniority: pleno
+  executions: 30
+  brief: Vaga plena de análise financeira e compliance, com conciliações, controles
+    internos, relatórios gerenciais, Excel, SQL e apoio a auditorias.
+- id: logistics-operations-pleno
+  theme: logistica_e_operacoes
+  seniority: pleno
+  executions: 30
+  brief: Vaga plena de operações logísticas, com gestão de estoque, indicadores OTIF,
+    roteirização, análise de capacidade, melhoria contínua e sistemas WMS e TMS.
+fixed_inputs: configs/inputs/front-a-300.json
+generation:
+  model: google/gemma-4-31b-it
+  temperature: 0
+  top_p: 1
+  max_tokens: 8192
+  max_retries: 2
+  timeout: 120
+fault_seed: 42
+success_controls: 60

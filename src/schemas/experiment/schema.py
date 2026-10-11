@@ -44,7 +44,7 @@ class ArtifactProfile(BaseModel):
         ):
             value = Path(getattr(self, field_name))
             if value.is_absolute() or ".." in value.parts:
-                raise ValueError(f"{field_name} deve ser relativo a output_dir.")
+                raise ValueError(f"{field_name} must be relative to output_dir.")
         return self
 
     @property
@@ -65,7 +65,7 @@ class ArtifactProfile(BaseModel):
 
 
 class FaultMode(BaseModel):
-    """Modo de falha catalogado para injeção controlada e futuro re-rollout."""
+    """Cataloged fault mode for controlled injection and future re-rollout."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -78,7 +78,7 @@ class FaultMode(BaseModel):
     def validate_taxonomy_pair(self) -> FaultMode:
         if not is_valid_error_pair(self.target_module, self.error_type):
             raise ValueError(
-                f"error_type={self.error_type.value} não pertence ao módulo "
+                f"error_type={self.error_type.value} does not belong to module "
                 f"{self.target_module.value}."
             )
         return self
@@ -95,10 +95,10 @@ class ErrorRecoveryProfile(BaseModel):
     def validate_unique_fault_ids(self) -> ErrorRecoveryProfile:
         ids = [mode.id for mode in self.fault_catalog]
         if len(ids) != len(set(ids)):
-            raise ValueError("Os ids de fault_catalog devem ser únicos.")
+            raise ValueError("fault_catalog IDs must be unique.")
         if self.replay_enabled:
             raise ValueError(
-                "replay_enabled ainda não pode ser true: falta o contrato HTTP de re-rollout."
+                "replay_enabled cannot be true yet: the re-rollout HTTP contract is missing."
             )
         return self
 
@@ -117,7 +117,7 @@ class ExperimentProfile(BaseModel):
     @model_validator(mode="after")
     def validate_front(self) -> ExperimentProfile:
         if self.error_recovery is None:
-            raise ValueError("A frente error_recovery exige a seção error_recovery.")
+            raise ValueError("The error_recovery front requires the error_recovery section.")
         validate_front_pipeline(self.front, self.pipeline)
         if (
             self.error_recovery is not None

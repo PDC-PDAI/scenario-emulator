@@ -1,4 +1,4 @@
-"""Captura da conversa (``messages``) para o re-rollout da Frente C."""
+"""Conversation capture (``messages``) for the Front C re-rollout."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_clean_agent_messages_preserves_conversation_order_and_ids():
     call = messages[2].tool_calls[0]
     assert call.id == "call_1"
     assert call.name == "get_info_vaga"
-    assert call.arguments == {"code": "job-1"}  # argumentos JSON viram dict
+    assert call.arguments == {"code": "job-1"}  # JSON arguments become a dict
 
     tool = messages[3]
     assert tool.tool_call_id == "call_1"
@@ -124,12 +124,12 @@ def test_saved_trajectory_round_trips_messages(tmp_path):
     assert len(with_messages.messages) == _CONVERSATION_LENGTH
     assert with_messages.messages[2].tool_calls[0].id == "call_1"
 
-    # Trajetória sem captura mantém o arquivo no formato de antes (sem a chave).
+    # A trajectory without capture keeps the previous file format (no key).
     assert "messages" not in json.loads(paths[1].read_text(encoding="utf-8"))
 
 
 class ExplodingStreamModel(Model):
-    """Um delta e depois TimeoutError: o Agno emite RunErrorEvent SEM RunOutput."""
+    """One delta, then TimeoutError: Agno emits RunErrorEvent WITHOUT RunOutput."""
 
     def __init__(self) -> None:
         super().__init__(id="exploding-model", name="Exploding", provider="Test")
@@ -156,9 +156,9 @@ class ExplodingStreamModel(Model):
 
 @pytest.mark.asyncio
 async def test_provider_failure_still_exports_messages(monkeypatch):
-    # Caminho apontado na revisão: erro de provider/timeout → RunErrorEvent sem
-    # RunOutput. A conversa até o turno da falha deve ser recuperada da sessão
-    # em memória e sair na trajetória.
+    # Path raised in review: provider error/timeout → RunErrorEvent without
+    # RunOutput. The conversation up to the failing turn must be recovered from
+    # the in-memory session and appear in the trajectory.
     monkeypatch.setattr(questionnaire_service_module, "build_model", ExplodingStreamModel)
     job = JobDescription(
         id="job-err",
@@ -186,7 +186,68 @@ async def test_provider_failure_still_exports_messages(monkeypatch):
     assert (result.failure_reason or "").startswith("AGENT_RUNTIME_ERROR")
     trajectory = result.agent_debug_trajectory
     assert trajectory is not None
-    assert trajectory.messages, "a conversa deve ser recuperada mesmo sem RunOutput no stream"
+    assert trajectory.messages, "the conversation must be recovered even without RunOutput in the stream"
     roles = [m.role for m in trajectory.messages]
     assert roles[0] == "system"
     assert "user" in roles
+
+
+class SaveThenTimeoutModel(ExplodingStreamModel):
+    """Looks up the job, saves a valid questionnaire, then times out on the next turn."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.turn = 0
+
+    async def ainvoke_stream(self, messages, assistant_message, **kwargs):  # type: ignore[override]
+        self.turn += 1
+        if self.turn == 1:
+            name, arguments = "get_info_vaga", {"code": "job-save"}
+        elif self.turn == 2:  # noqa: PLR2004
+            question = {"text": "Como você projeta APIs FastAPI?", "type": "LONG_TEXT",
+                        "weight": 5, "required": True, "rationale": "Avalia arquitetura."}
+            name, arguments = "salvar_formulario", {
+                "questionnaireId": "questionnaire-generation-001",
+                "payload": {"questions": [question]},
+            }
+        else:
+            raise TimeoutError("provider timeout after save")
+        yield ModelResponse(role="assistant", tool_calls=[{
+            "id": f"call_{self.turn}", "type": "function",
+            "function": {"name": name, "arguments": json.dumps(arguments)},
+        }])
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_after_successful_save_keeps_clean_trajectory(monkeypatch):
+    monkeypatch.setattr(questionnaire_service_module, "build_model", SaveThenTimeoutModel)
+    job = JobDescription(
+        id="job-save",
+        title="Pessoa Desenvolvedora Backend",
+        summary="Desenvolvimento de APIs Python para uma plataforma de recrutamento.",
+        responsibilities=["Construir e manter APIs."],
+        requirements=["Experiência com Python e FastAPI."],
+        source_brief="Vaga backend Python e FastAPI.",
+    )
+    prompt = CoordinatorPrompt(
+        id="command-save",
+        job_description_id=job.id,
+        sequence=1,
+        intent=PromptIntent.BENIGN,
+        category=PromptCategory.PROFESSIONAL_CUSTOMIZATION,
+        command="Gere uma pergunta técnica para a vaga.",
+        expected_action=ExpectedAction.COMPLY,
+        requested_question_count=1,
+        rationale="Provider fails only after the terminal save.",
+    )
+
+    result = await QuestionnaireService().execute(
+        job, prompt, scenario_id="scenario-save", fixed_input_id="generation-001"
+    )
+
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert result.failure_reason is None
+    trajectory = result.agent_debug_trajectory
+    assert trajectory is not None and trajectory.success is True
+    actions = [json.loads(step.module_outputs["action"])["tool"] for step in trajectory.steps]
+    assert actions == ["get_info_vaga", "salvar_formulario"]

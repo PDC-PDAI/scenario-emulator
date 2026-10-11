@@ -100,7 +100,7 @@ def test_rejects_success_flag_with_observed_failure(control, defect):
         validate_control(control)
 
 
-def test_build_preserves_case_content_and_remaps_labels(tmp_path, control):  # noqa: PLR0915 - integração de preservação, revisão e substituição
+def test_build_preserves_case_content_and_remaps_labels(tmp_path, control):  # noqa: PLR0915 - preservation, review and replacement integration
     dataset = tmp_path / "source"
     baseline_dir = dataset / "private/baseline-trajectories"
     baseline_dir.mkdir(parents=True)
@@ -152,12 +152,12 @@ def test_build_preserves_case_content_and_remaps_labels(tmp_path, control):  # n
         id_map["generation-0002"]: None,
     }
     assert json.loads(label_path.read_bytes()) == labels
-    with pytest.raises(ValueError, match="diretório de saída novo"):
+    with pytest.raises(ValueError, match="new output directory"):
         build(source_zip, label_path, dataset, output, per_group=1, audit_dir=audit_dir)
     audit_path.write_bytes(
         json_bytes({**review, "accepted": False, "issues": ["Pedido descumprido."]})
     )
-    with pytest.raises(ValueError, match="insuficientes"):
+    with pytest.raises(ValueError, match="Not enough clean baselines"):
         build(
             source_zip, label_path, dataset, tmp_path / "rejected", per_group=1, audit_dir=audit_dir
         )
@@ -196,7 +196,7 @@ def test_build_preserves_case_content_and_remaps_labels(tmp_path, control):  # n
     ]
     assert any(row["parent_trajectory_id"] == "baseline-2" for row in replacement_provenance)
     audit_path.write_bytes(json_bytes({**review, "source_sha256": "stale"}))
-    with pytest.raises(ValueError, match="mudou após"):
+    with pytest.raises(ValueError, match="changed after"):
         build(source_zip, label_path, dataset, tmp_path / "stale", per_group=1, audit_dir=audit_dir)
     label_path.write_text("{}")
     with pytest.raises(ValueError, match="labels"):

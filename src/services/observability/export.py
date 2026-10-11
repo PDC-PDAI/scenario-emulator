@@ -6,12 +6,12 @@ from src.clients.langfuse.client import get_langfuse_client
 
 
 def fetch_trace_export(trace_id: str) -> dict[str, Any]:
-    """Busca um trace completo, incluindo observações e scores embutidos."""
+    """Fetch a complete trace, including embedded observations and scores."""
     client = get_langfuse_client()
     if client is None:
         raise RuntimeError(
-            "Langfuse não configurado. Confira LANGFUSE_PUBLIC_KEY, "
-            "LANGFUSE_SECRET_KEY e LANGFUSE_BASE_URL."
+            "Langfuse is not configured. Check LANGFUSE_PUBLIC_KEY, "
+            "LANGFUSE_SECRET_KEY and LANGFUSE_BASE_URL."
         )
 
     trace = client.api.trace.get(trace_id.strip())

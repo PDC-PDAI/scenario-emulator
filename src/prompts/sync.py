@@ -23,8 +23,8 @@ def sync_prompts() -> int:
     client = get_langfuse_client()
     if client is None:
         raise RuntimeError(
-            "Langfuse não configurado. Defina LANGFUSE_PUBLIC_KEY, "
-            "LANGFUSE_SECRET_KEY e LANGFUSE_BASE_URL no .env."
+            "Langfuse is not configured. Set LANGFUSE_PUBLIC_KEY, "
+            "LANGFUSE_SECRET_KEY and LANGFUSE_BASE_URL in .env."
         )
     label = settings.LANGFUSE_SYNC_LABEL
     for name, content in PROMPTS.items():

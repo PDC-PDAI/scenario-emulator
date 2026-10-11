@@ -15,7 +15,7 @@ class JobDescriptionService:
     async def generate(self, brief: str, *, scenario_id: str) -> JobDescription:
         brief = brief.strip()
         if not brief:
-            raise ValueError("O briefing da vaga não pode ser vazio.")
+            raise ValueError("The job brief cannot be empty.")
 
         system = resolve_prompt("front-a/job-description/system", JOB_DESCRIPTION_SYSTEM_PROMPT)
         user = resolve_prompt(

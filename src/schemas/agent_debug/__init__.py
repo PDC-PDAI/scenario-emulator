@@ -1,4 +1,4 @@
-"""Contrato de integração com a pipeline AgentDebug-RH."""
+"""Integration contract with the AgentDebug-RH pipeline."""
 
 from src.schemas.agent_debug.schema import (
     AgentDebugTrajectory,

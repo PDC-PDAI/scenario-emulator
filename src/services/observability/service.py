@@ -89,7 +89,7 @@ def trace_attributes(
 
 
 def create_langfuse_trace_id(*, seed: str) -> str | None:
-    """Cria um trace id estável sem tornar o Langfuse obrigatório no runtime."""
+    """Create a stable trace ID without making Langfuse mandatory at runtime."""
     client = get_langfuse_client()
     return client.create_trace_id(seed=seed) if client is not None else None
 

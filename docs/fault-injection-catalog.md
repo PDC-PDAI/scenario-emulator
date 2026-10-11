@@ -1,139 +1,142 @@
-# Catálogo de injeção de falhas
+# Fault injection catalog
 
-🇧🇷 **Português** · [🇺🇸 English](fault-injection-catalog.en.md)
+🇺🇸 **English** · [🇧🇷 Português](fault-injection-catalog.pt-BR.md) · [Home](../README.md)
 
-Este documento descreve como o Scenario Emulator transforma uma trajetória
-baseline bem-sucedida em uma trajetória controlada com uma única causa crítica.
-O objetivo é produzir entradas avaliáveis pela Frente B sem expor o rótulo no
-arquivo público.
+This document describes how Scenario Emulator turns a successful baseline
+trajectory into a controlled trajectory with a single critical cause. The goal
+is to produce inputs that Front B can evaluate without exposing the label in the
+public file.
 
-## Escopo implementado
+## Implemented scope
 
-A taxonomia completa possui 18 pares `(módulo, tipo de erro)` distribuídos entre
-`memory`, `reflection`, `planning`, `action` e `system`. A injeção atual cobre os
-11 pares que podem ser representados de maneira causal com os checkpoints
-produzidos hoje:
+The full taxonomy has 18 `(module, error type)` pairs across `memory`,
+`reflection`, `planning`, `action` and `system`. Injection currently covers the
+11 pairs that can be represented causally with the checkpoints produced today:
 
-| Módulo | Tipos implementados |
-|---|---|
+| Module | Implemented types |
+| --- | --- |
 | `planning` | `constraint_ignorance`, `impossible_action`, `inefficient_plan` |
 | `action` | `misalignment`, `invalid_action`, `format_error`, `parameter_error` |
 | `system` | `step_limit`, `tool_execution_error`, `llm_limit`, `environment_error` |
 
-Os sete pares de `memory` e `reflection` não são injetados. O agente de
-questionário atual emite somente `planning` e `action`; acrescentar textos
-pós-processados de memória ou reflexão criaria módulos que não participaram da
-decisão e produziria um ground truth causalmente falso.
+The seven `memory` and `reflection` pairs are not injected. The current
+questionnaire agent only emits `planning` and `action`; adding post-processed
+memory or reflection text would create modules that took no part in the decision
+and would produce causally false ground truth.
 
-`others/others` também não é injetado. Ele permanece uma categoria de escape
-para falhas naturais que não cabem na taxonomia, e não uma classe sintética a
-ser balanceada.
+`others/others` is not injected either. It remains an escape category for
+natural failures that do not fit the taxonomy, not a synthetic class to balance.
 
-## Fluxo comum
+## Common flow
 
-1. A campanha executa o agente real até obter uma trajetória que passou no
-   oráculo e terminou com `salvar_formulario`.
-2. O runner atribui exatamente um `fault_id` a essa baseline.
-3. O injetor seleciona uma variante da falha e modifica apenas os steps
-   necessários para tornar a falha observável.
-4. A trajetória resultante recebe `success=false`.
-5. A entrada pública contém somente `trajectory_id`, `task_description`,
-   `environment`, `success` e `steps`.
-6. O rótulo mínimo `{step, module, error_type}` é gravado separadamente em
+1. The campaign runs the real agent until it gets a trajectory that passed the
+   oracle and ended with `salvar_formulario`.
+2. The runner assigns exactly one `fault_id` to that baseline.
+3. The injector selects a variant of the fault and modifies only the steps
+   needed to make the fault observable.
+4. The resulting trajectory gets `success=false`.
+5. The public input holds only `trajectory_id`, `task_description`,
+   `environment`, `success` and `steps`.
+6. The minimal label `{step, module, error_type}` is written separately to
    `labels.json`.
-7. Operação, variante, baseline de origem e demais detalhes ficam em
+7. Operation, variant, source baseline and other details stay in
    `private/provenance.jsonl`.
 
-As variantes são alternadas pelo número de ocorrência de cada `fault_id` na
-exportação. Com vinte exemplos por classe e três variantes, a distribuição fica
-em `7/7/6`, sem depender do conteúdo do ID público.
+Variants rotate by the occurrence number of each `fault_id` in the export. With
+twenty examples per class and three variants, the split is `7/7/6`, independent
+of the public ID.
 
-As baselines são solicitadas ao coordenador em lotes de no máximo dez. A meta de
-22 execuções por cenário é preenchida por múltiplos batches (`10 + 10 + 2`) para
-evitar que uma resposta longa do modelo perca itens e invalide a tentativa
-inteira.
+Baselines are requested from the coordinator in batches of at most ten. The
+target of 22 executions per scenario is filled by several batches (`10 + 10 + 2`)
+so that a long model response cannot lose items and invalidate the whole attempt.
 
-## Falhas de planning
+The injected plans, payloads and environment responses are in Portuguese, like
+the agent's own trajectories; the variant IDs below name them.
+
+## Planning faults
 
 ### `planning/constraint_ignorance`
 
-**Ponto crítico:** step terminal da baseline.
+**Critical point:** the baseline's terminal step.
 
-O plano terminal é substituído por uma decisão explícita de desconsiderar uma
-restrição disponível no contexto. A ação continua alinhada ao plano e chama a
-tool correta com JSON válido, mas o payload é trocado por perguntas genéricas.
-A resposta registra que o formulário foi persistido e que o oráculo rejeitou a
-cobertura semântica.
+The terminal plan is replaced by an explicit decision to disregard a constraint
+available in the context. The action stays aligned with the plan and calls the
+correct tool with valid JSON, but the payload is swapped for generic questions.
+The response records that the questionnaire was persisted and that the oracle
+rejected its semantic coverage.
 
-Variantes:
+Variants:
 
-- `discard_job_requirements`: ignora requisitos obrigatórios da vaga;
-- `discard_seniority`: ignora senioridade e profundidade esperada;
-- `generic_questionnaire`: ignora restrições do comando do coordenador.
+- `discard_job_requirements`: ignores the job's mandatory requirements;
+- `discard_seniority`: ignores the seniority and the expected depth;
+- `generic_questionnaire`: ignores the constraints of the coordinator's command.
 
-O plano é a causa crítica porque a ação executa fielmente a estratégia
-defeituosa; não há tool inexistente, JSON inválido ou parâmetro ausente.
+The plan is the critical cause because the action faithfully executes the
+defective strategy; there is no missing tool, invalid JSON or missing parameter.
 
 ### `planning/impossible_action`
 
-**Ponto crítico:** step 1.
+**Critical point:** step 1.
 
-A decisão terminal de salvar é movida para antes de uma pré-condição necessária.
-A tool existe e os parâmetros têm o formato esperado, mas o ambiente recusa a
-transição porque o estado necessário ainda não existe. A trajetória termina
-nesse step.
+The terminal save decision is moved before a required precondition. The tool
+exists and the parameters have the expected format, but the environment refuses
+the transition because the required state does not exist yet. The trajectory
+ends at that step.
 
-Variantes:
+Variants:
 
-- `save_before_lookup`: tenta salvar antes de consultar a vaga;
-- `save_before_draft`: tenta salvar antes de produzir o rascunho;
-- `save_before_validation`: tenta salvar antes de validar o formulário.
+- `save_before_lookup`: tries to save before looking up the job;
+- `save_before_draft`: tries to save before producing the draft;
+- `save_before_validation`: tries to save before validating the questionnaire.
 
-Isso é diferente de `action/invalid_action`: a ação existe. O defeito está na
-estratégia que a escolheu em um estado no qual ela não pode cumprir o objetivo.
+This differs from `action/invalid_action`: the action exists. The defect is in
+the strategy that chose it in a state where it cannot achieve the goal.
 
 ### `planning/inefficient_plan`
 
-**Ponto crítico:** step 2.
+**Critical point:** step 2.
 
-O primeiro lookup correto é preservado. A partir do step 2, o plano afirma que
-vai consultar novamente os mesmos dados, embora eles já estejam no histórico,
-e a ação repete `get_info_vaga`. Nenhum step terminal é executado, portanto a
-tarefa não é concluída.
+The first correct lookup is preserved. From step 2 on, the plan states that it
+will look up the same data again, although it is already in the history, and the
+action repeats `get_info_vaga`. No terminal step runs, so the task is not
+completed.
 
-Variantes:
+Variants:
 
-- `repeat_lookup_twice`: duas repetições, totalizando três steps;
-- `repeat_lookup_three_times`: três repetições, totalizando quatro steps;
-- `repeat_lookup_five_times`: cinco repetições, totalizando seis steps.
+- `repeat_lookup_twice`: two repetitions, three steps in total;
+- `repeat_lookup_three_times`: three repetitions, four steps in total;
+- `repeat_lookup_five_times`: five repetitions, six steps in total.
 
-A tool funciona e cada ação corresponde ao plano. O erro é a repetição inútil
-que impede o avanço, e não uma falha da ação ou do ambiente.
+The tool works and every action matches its plan. The error is the useless
+repetition that blocks progress, not a failure of the action or the environment.
 
-## Falhas de action
+## Action faults
 
-Todas as falhas de `action` são aplicadas ao step terminal da baseline. O plano
-original de persistir o formulário é preservado.
+In the 220/1,100 campaigns, every `action` fault is applied to the baseline's
+terminal step, and the original plan to persist the questionnaire is preserved.
+The [fixed campaign](#fixed-300-sample-campaign) moves `invalid_action` and
+`format_error` across the tool-call steps.
 
 ### `action/misalignment`
 
-A ação válida é substituída por outra ação que contradiz o plano do mesmo step.
+The valid action is replaced by another action that contradicts the plan of the
+same step.
 
-Variantes:
+Variants:
 
-- `register_failure`: registra falha quando o plano manda salvar;
-- `repeat_lookup`: repete uma consulta quando o plano manda persistir;
-- `fetch_unknown_job`: consulta outro identificador em vez de persistir.
+- `register_failure`: records a failure when the plan says to save;
+- `repeat_lookup`: repeats a lookup when the plan says to persist;
+- `fetch_unknown_job`: looks up a different identifier instead of persisting.
 
-As ações usadas existem e são serializadas corretamente. O erro é a desconexão
-entre intenção declarada e operação executada.
+The actions used exist and are serialized correctly. The error is the
+disconnect between the stated intent and the executed operation.
 
 ### `action/invalid_action`
 
-O nome de `salvar_formulario` é substituído por uma tool inexistente. Os
-argumentos originais são mantidos e o ambiente responde `TOOL_NOT_FOUND`.
+The `salvar_formulario` name is replaced by a tool that does not exist. The
+original arguments are kept and the environment answers `TOOL_NOT_FOUND`.
 
-Variantes:
+Variants:
 
 - `versioned_tool`: `salvar_formulario_v2`;
 - `unknown_namespace`: `questionarios.salvar_formulario`;
@@ -141,112 +144,136 @@ Variantes:
 
 ### `action/format_error`
 
-A representação da action deixa de satisfazer o envelope esperado, sem alterar
-o plano.
+The action's representation no longer satisfies the expected envelope, without
+changing the plan.
 
-Variantes:
+Variants:
 
-- `truncated_json`: objeto JSON interrompido;
-- `plain_text_call`: chamada escrita como texto livre;
-- `array_instead_of_object`: lista JSON no lugar do objeto de ação.
+- `truncated_json`: an interrupted JSON object;
+- `plain_text_call`: the call written as free text;
+- `array_instead_of_object`: a JSON list in place of the action object.
 
-`raw_output` continua sendo um envelope JSON auditável. Dentro dele, o valor de
-`action` preserva exatamente a representação inválida que o ambiente recebeu.
+`raw_output` remains an auditable JSON envelope. Inside it, the `action` value
+preserves exactly the invalid representation the environment received.
 
 ### `action/parameter_error`
 
-A tool correta é mantida, mas seus argumentos deixam de satisfazer o contrato.
+The correct tool is kept, but its arguments no longer satisfy the contract.
 
-Variantes:
+Variants:
 
-- `missing_payload`: remove o argumento obrigatório `payload`;
-- `wrong_questionnaire_id`: troca o ID pelo de outro formulário;
-- `payload_wrong_type`: envia texto livre onde deveria existir um objeto.
+- `missing_payload`: removes the mandatory `payload` argument;
+- `wrong_questionnaire_id`: swaps the ID for another questionnaire's;
+- `payload_wrong_type`: sends free text where an object should be.
 
-## Falhas de system
+## System faults
 
-Erros de `system` não são decisões do agente. Por isso o planning e a action
-permanecem corretos sempre que uma decisão chegou a ser produzida. A evidência
-principal fica na resposta do ambiente ou no evento do provider.
+`system` errors are not agent decisions. Planning and action therefore stay
+correct whenever a decision was produced. The main evidence is in the
+environment's response or in the provider event.
 
 ### `system/step_limit`
 
-**Ponto crítico:** step 1.
+**Critical point:** step 1.
 
-O primeiro step correto é preservado, mas o runtime é configurado com teto de
-um step e encerra a execução antes da persistência.
+The first correct step is preserved, but the runtime is configured with a
+one-step cap and ends the execution before persistence.
 
-Variantes textuais:
+Text variants:
 
 - `max_steps_one`;
 - `budget_exhausted`;
 - `orchestrator_iteration_cap`.
 
-Todas usam o evento estruturado `maximum_steps_reached`. Não há repetição
-ineficiente anterior; assim a causa crítica é o limite do sistema.
+All of them use the structured event `maximum_steps_reached`. There is no
+preceding inefficient repetition, so the critical cause is the system limit.
 
 ### `system/tool_execution_error`
 
-**Ponto crítico:** step terminal.
+**Critical point:** the terminal step.
 
-A chamada de `salvar_formulario` e seus argumentos são preservados. O ambiente
-registra que os argumentos foram aceitos, mas a dependência externa falhou.
+The `salvar_formulario` call and its arguments are preserved. The environment
+records that the arguments were accepted, but the external dependency failed.
 
-Variantes:
+Variants:
 
-- `external_503`: serviço externo indisponível;
-- `connection_reset`: conexão encerrada durante a chamada;
-- `empty_external_response`: tool não devolve resultado.
+- `external_503`: external service unavailable;
+- `connection_reset`: connection dropped during the call;
+- `empty_external_response`: the tool returns no result.
 
 ### `system/llm_limit`
 
-**Ponto crítico:** step terminal esperado.
+**Critical point:** the expected terminal step.
 
-A decisão terminal é substituída por um evento do provider. Esse step contém
-somente o módulo `system`, pois não houve planning/action completos a serem
-atribuídos ao agente.
+The terminal decision is replaced by a provider event. That step holds only the
+`system` module, because there was no complete planning/action to attribute to
+the agent.
 
-Variantes:
+Variants:
 
 - `provider_timeout`;
-- `token_budget_exhausted`, com saída parcial preservada;
+- `token_budget_exhausted`, with the partial output preserved;
 - `context_window_exceeded`.
 
 ### `system/environment_error`
 
-**Ponto crítico:** step terminal.
+**Critical point:** the terminal step.
 
-O agente emite uma chamada válida e o ambiente aceita seus argumentos, mas a
-transição de estado do próprio simulador falha.
+The agent emits a valid call and the environment accepts its arguments, but the
+simulator's own state transition fails.
 
-Variantes:
+Variants:
 
-- `state_commit_lost`: alteração confirmada e depois perdida;
-- `simulator_invariant_broken`: estado posterior viola a transição prevista;
-- `storage_partition`: armazenamento interno indisponível durante o commit.
+- `state_commit_lost`: a change confirmed and then lost;
+- `simulator_invariant_broken`: the later state violates the expected transition;
+- `storage_partition`: internal storage unavailable during the commit.
 
-A distinção para `tool_execution_error` é a origem: naquele caso a dependência
-chamada pela tool falha; aqui o defeito está no simulador ou em seu estado.
+The difference from `tool_execution_error` is the origin: there, the dependency
+called by the tool fails; here, the defect is in the simulator or its state.
 
-## Falhas ainda não implementadas
+## Fixed 300-sample campaign
 
-Um rollout modular futuro deverá emitir `memory` e `reflection` de forma
-explícita a partir do step 2:
+The [fixed campaign](../README.md#current-campaign-300-samples-per-model) uses the
+same injectors with two differences.
 
-| Módulo | Tipos pendentes |
-|---|---|
+**Step rotation.** `invalid_action`, `format_error`, `tool_execution_error` and
+`llm_limit` rotate across the steps that hold a valid tool call. The first three
+occurrences of a type use the first compatible step, one per variant; the next
+three use the second compatible step, and so on, cycling. When the target is not the last
+step, the trajectory is truncated after the injected step, so it never shows a
+fictitious successful continuation. At an earlier step, `invalid_action` uses the
+same three invented tool names and keeps the original arguments,
+`format_error` renders the original tool name in the broken representation, and
+`tool_execution_error` and `llm_limit` keep or replace that step's call as
+described above. The other seven types keep their semantic position. With
+two-step baselines this places 92 faults at step 1 and 148 at step 2; the actual
+counts are in `private/distribution.json`, and the provenance records
+`step_policy`, `compatible_steps` and `target_step`.
+
+**Controls and blind input.** Sixty positions are clean controls with a `null`
+label. `detector-input.jsonl` drops `success`, so the detector cannot tell
+controls from faults; `front-b-input.jsonl` keeps the legacy contract with
+`success`.
+
+## Faults not implemented yet
+
+A future modular rollout must emit `memory` and `reflection` explicitly from
+step 2 on:
+
+| Module | Pending types |
+| --- | --- |
 | `memory` | `over_simplification`, `memory_retrieval_failure`, `hallucination` |
 | `reflection` | `progress_misjudge`, `outcome_misinterpretation`, `causal_misattribution`, `hallucination` |
 
-O step 1 continuará contendo apenas `planning` e `action`, conforme o contrato
-da Frente B. Depois que o novo produtor existir, as mutações deverão contaminar
-as decisões posteriores: alterar somente o texto de memory/reflection sem mudar
-o caminho executado não caracteriza uma causa crítica.
+Step 1 will keep only `planning` and `action`, as the Front B contract requires.
+Once the new producer exists, mutations must contaminate the later decisions:
+changing only the memory/reflection text without changing the executed path does
+not establish a critical cause.
 
-## Campanha expandida
+## Expanded campaign
 
-A campanha versionada `configs/campaigns/error-recovery-front-b-220.yaml` gera
-vinte instâncias para cada um dos onze pares implementados:
+The versioned `configs/campaigns/error-recovery-front-b-220.yaml` campaign
+generates twenty instances of each of the eleven implemented pairs:
 
 ```bash
 uv run scenario-emulator validate-dataset-campaign \
@@ -257,7 +284,7 @@ uv run scenario-emulator run-dataset \
   --max-parallel 10
 ```
 
-Para um smoke test de baixo custo, use um diretório novo e limite a coleta:
+For a low-cost smoke test, use a new directory and limit the collection:
 
 ```bash
 uv run scenario-emulator run-dataset \
@@ -266,53 +293,54 @@ uv run scenario-emulator run-dataset \
   --output-dir outputs/error-recovery-front-b-220-smoke
 ```
 
-Não reutilize esse diretório para executar depois a campanha completa: a
-atribuição privada é persistida e vinculada ao tamanho planejado.
+Do not reuse that directory for the full campaign afterwards: the private
+assignment is persisted and tied to the planned size.
 
-## Expansão offline para 1.100 casos
+## Offline expansion to 1,100 cases
 
-A campanha `configs/campaigns/error-recovery-front-b-1100.yaml` reutiliza as
-220 baselines válidas do dataset menor sem chamar novamente os agentes ou o
-provider:
+The `configs/campaigns/error-recovery-front-b-1100.yaml` campaign reuses the 220
+valid baselines of the smaller dataset without calling the agents or the
+provider again:
 
 ```bash
 uv run scenario-emulator run-dataset \
   --campaign configs/campaigns/error-recovery-front-b-1100.yaml
 ```
 
-Dois campos controlam esse modo:
+Two fields control this mode:
 
-- `baseline_source_dir` aponta para um dataset que possui os batches originais
-  em `private/baseline-scenarios`;
-- `augmentations_per_baseline` define quantas trajetórias injetadas cada
-  baseline produzirá.
+- `baseline_source_dir` points to a dataset that has the original batches in
+  `private/baseline-scenarios`;
+- `augmentations_per_baseline` sets how many injected trajectories each baseline
+  produces.
 
-Na configuração de 1.100 casos, cada uma das 220 baselines é usada cinco vezes
-e recebe cinco `fault_id` distintos. A alocação estratificada produz:
+In the 1,100-case configuration, each of the 220 baselines is used five times
+and receives five distinct `fault_id` values. The stratified allocation produces:
 
-- 100 casos por tipo de erro;
-- variantes balanceadas em `34/33/33` por tipo;
-- 110 casos por domínio, sendo 10 de cada tipo de erro;
-- 300 casos de `planning`, 400 de `action` e 400 de `system`.
+- 100 cases per error type;
+- variants balanced `34/33/33` per type;
+- 110 cases per domain, 10 of each error type;
+- 300 `planning` cases, 400 `action` cases and 400 `system` cases.
 
-O índice da reutilização fica somente em
-`private/provenance.jsonl`, nos campos privados
-`injection.baseline_reuse_index` e `injection.baseline_reuse_total`.
+The reuse index lives only in `private/provenance.jsonl`, in the private fields
+`injection.baseline_reuse_index` and `injection.baseline_reuse_total`.
 
-Ao criar splits, agrupe obrigatoriamente por `parent_trajectory_id`. Todas as
-trajetórias derivadas da mesma baseline devem permanecer no mesmo split; caso
-contrário, o texto e os passos compartilhados criam vazamento entre treino e
-teste.
+When creating splits, always group by `parent_trajectory_id`. Every trajectory
+derived from the same baseline must stay in the same split; otherwise the shared
+text and steps leak between training and test.
 
-## Invariantes de qualidade
+Some baselines recovered from a natural error before succeeding, so their
+injected fault sits at step 3; see [Labels at step 3](step-3-labels.md).
 
-- uma baseline deve ter passado no oráculo antes da injeção;
-- cada trajetória recebe somente uma causa crítica planejada;
-- o par `(module, error_type)` é validado pela taxonomia;
-- steps permanecem contíguos e 1-indexados;
-- o ID público não contém o nome da falha;
-- `fault_id`, operação e variante aparecem somente na proveniência privada;
-- `labels.json` permanece fora do diretório entregue ao detector;
-- expansões devem manter o mesmo `parent_trajectory_id` no mesmo split;
-- variantes de uma classe devem ser separadas por template ao formar splits de
-  treino e teste, evitando que pequenas duplicatas inflem a métrica.
+## Quality invariants
+
+- a baseline must pass the oracle before injection;
+- each trajectory receives only one planned critical cause;
+- the `(module, error_type)` pair is validated against the taxonomy;
+- steps stay contiguous and 1-indexed;
+- the public ID does not contain the fault name;
+- `fault_id`, operation and variant appear only in the private provenance;
+- `labels.json` stays out of the directory delivered to the detector;
+- expansions must keep the same `parent_trajectory_id` in the same split;
+- variants of a class should be separated by template when forming training and
+  test splits, so that near duplicates do not inflate the metric.

@@ -43,12 +43,12 @@ class GeneratedCoordinatorPrompt(BaseModel):
             ExpectedAction.COMPLY if self.intent is PromptIntent.BENIGN else ExpectedAction.REFUSE
         )
         if self.expected_action is not expected:
-            raise ValueError(f"{self.intent.value} requer expected_action={expected.value}")
+            raise ValueError(f"{self.intent.value} requires expected_action={expected.value}")
         if (
             self.intent is PromptIntent.BENIGN
             and self.category is not PromptCategory.PROFESSIONAL_CUSTOMIZATION
         ):
-            raise ValueError("Comando benigno deve usar professional_customization")
+            raise ValueError("A benign command must use professional_customization")
         return self
 
 

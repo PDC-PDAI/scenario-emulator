@@ -57,7 +57,7 @@ class _ScenarioCollection:
 
 @dataclass(frozen=True)
 class _InjectedFault:
-    """Resultado interno de uma mutação e seu ponto causal esperado."""
+    """Internal result of a mutation and its expected causal point."""
 
     steps: list[AgentDebugTrajectoryStep]
     target_step: int
@@ -90,7 +90,7 @@ def _baseline_batch_directory(
     if campaign.baseline_source_dir is None:
         batch_dir.mkdir(parents=True, exist_ok=True)
     elif not batch_dir.is_dir():
-        raise ValueError(f"Cache de baselines não encontrado para o cenário {scenario_id}.")
+        raise ValueError(f"Baseline cache not found for scenario {scenario_id}.")
     return batch_dir
 
 
@@ -122,7 +122,7 @@ def _expand_baselines(
     fault_ids: list[str],
     assignment: dict[str, str],
 ) -> list[_Baseline]:
-    """Reutiliza baselines sem repetir um fault_id para o mesmo pai quando possível."""
+    """Reuse baselines without repeating a fault_id for the same parent when possible."""
     if not baselines:
         return []
 
@@ -137,11 +137,7 @@ def _expand_baselines(
         and len(set(assigned_counts.values())) == 1
     )
     if not supports_stratification:
-        expanded = [
-            baseline
-            for _ in range(augmentations_per_baseline)
-            for baseline in baselines
-        ]
+        expanded = [baseline for _ in range(augmentations_per_baseline) for baseline in baselines]
         return expanded[:output_size]
 
     slots: dict[str, list[_Baseline]] = {fault_id: [] for fault_id in fault_ids}
@@ -153,11 +149,7 @@ def _expand_baselines(
     if Counter({fault_id: len(items) for fault_id, items in slots.items()}) != Counter(
         assigned_counts
     ):
-        expanded = [
-            baseline
-            for _ in range(augmentations_per_baseline)
-            for baseline in baselines
-        ]
+        expanded = [baseline for _ in range(augmentations_per_baseline) for baseline in baselines]
         return expanded[:output_size]
 
     positions: Counter[str] = Counter()
@@ -185,7 +177,7 @@ def _terminal_step(trajectory: AgentDebugTrajectory) -> AgentDebugTrajectoryStep
         if payload and payload.get("tool") == "salvar_formulario":
             return step
     raise ValueError(
-        f"A trajetória {trajectory.trajectory_id} não possui action:salvar_formulario."
+        f"Trajectory {trajectory.trajectory_id} has no action:salvar_formulario."
     )
 
 
@@ -198,7 +190,7 @@ def _replace_decision_step(
     raw_action: object | None = None,
     env_response: object | None = None,
 ) -> list[AgentDebugTrajectoryStep]:
-    """Substitui uma decisão preservando a coerência entre módulos e raw_output."""
+    """Replace a decision while keeping modules and raw_output consistent."""
     steps: list[AgentDebugTrajectoryStep] = []
     for original in trajectory.steps:
         if original.index != target_index:
@@ -237,6 +229,11 @@ def _variant(variants: tuple[str, ...], variant_index: int) -> tuple[int, str]:
     return position, variants[position]
 
 
+# The injected plans, payloads and environment responses below are dataset content
+# read by the detector. They stay in Portuguese, the language of the agent, its
+# prompts and its tools, so new collections remain comparable with existing ones.
+
+
 def _planning_constraint_ignorance(
     trajectory: AgentDebugTrajectory,
     variant_index: int,
@@ -244,7 +241,7 @@ def _planning_constraint_ignorance(
     target = _terminal_step(trajectory)
     action = _action_payload(target)
     if action is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
 
     position, variant_id = _variant(
         ("discard_job_requirements", "discard_seniority", "generic_questionnaire"),
@@ -311,7 +308,7 @@ def _planning_impossible_action(
     terminal = _terminal_step(trajectory)
     terminal_action = _action_payload(terminal)
     if terminal_action is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     _, variant_id = _variant(
         ("save_before_lookup", "save_before_draft", "save_before_validation"),
         variant_index,
@@ -321,10 +318,7 @@ def _planning_impossible_action(
         "save_before_draft": "o rascunho do questionário ainda não foi produzido",
         "save_before_validation": "o formulário ainda não foi validado",
     }[variant_id]
-    planning = (
-        "Vou persistir o formulário imediatamente, embora "
-        f"{missing_precondition}."
-    )
+    planning = f"Vou persistir o formulário imediatamente, embora {missing_precondition}."
     action_output = _json_text(terminal_action)
     injected_first = first.model_copy(
         deep=True,
@@ -361,7 +355,7 @@ def _planning_inefficient_plan(
     first = trajectory.steps[0].model_copy(deep=True)
     lookup_action = _action_payload(first)
     if lookup_action is None:
-        raise ValueError("O primeiro step não contém uma action de consulta válida.")
+        raise ValueError("The first step does not contain a valid lookup action.")
     position, variant_id = _variant(
         ("repeat_lookup_twice", "repeat_lookup_three_times", "repeat_lookup_five_times"),
         variant_index,
@@ -416,7 +410,7 @@ def _action_misalignment(
     target = _terminal_step(trajectory)
     original = _action_payload(target)
     if original is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     arguments = original.get("arguments")
     arguments = dict(arguments) if isinstance(arguments, dict) else {}
     position, variant_id = _variant(
@@ -457,11 +451,16 @@ def _action_misalignment(
 def _action_invalid_action(
     trajectory: AgentDebugTrajectory,
     variant_index: int,
+    target_index: int | None = None,
 ) -> _InjectedFault:
-    target = _terminal_step(trajectory)
+    target = (
+        _terminal_step(trajectory)
+        if target_index is None
+        else next(step for step in trajectory.steps if step.index == target_index)
+    )
     original = _action_payload(target)
     if original is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     arguments = original.get("arguments")
     arguments = dict(arguments) if isinstance(arguments, dict) else {}
     position, variant_id = _variant(
@@ -495,11 +494,16 @@ def _action_invalid_action(
 def _action_format_error(
     trajectory: AgentDebugTrajectory,
     variant_index: int,
+    target_index: int | None = None,
 ) -> _InjectedFault:
-    target = _terminal_step(trajectory)
+    target = (
+        _terminal_step(trajectory)
+        if target_index is None
+        else next(step for step in trajectory.steps if step.index == target_index)
+    )
     original = _action_payload(target)
     if original is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     position, variant_id = _variant(
         ("truncated_json", "plain_text_call", "array_instead_of_object"), variant_index
     )
@@ -513,7 +517,7 @@ def _action_format_error(
         "A chamada foi emitida como texto livre e não pôde ser interpretada.",
         "Era esperado um objeto de ação, mas foi recebida uma lista.",
     )
-    action_output = action_outputs[position]
+    action_output = action_outputs[position].replace("salvar_formulario", str(original["tool"]))
     steps = _replace_decision_step(
         trajectory,
         target_index=target.index,
@@ -539,7 +543,7 @@ def _action_parameter_error(
     target = _terminal_step(trajectory)
     original = _action_payload(target)
     if original is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     arguments = original.get("arguments")
     arguments = dict(arguments) if isinstance(arguments, dict) else {}
     position, variant_id = _variant(
@@ -615,16 +619,21 @@ def _system_step_limit(
 def _system_tool_execution_error(
     trajectory: AgentDebugTrajectory,
     variant_index: int,
+    target_index: int | None = None,
 ) -> _InjectedFault:
-    target = _terminal_step(trajectory)
+    target = (
+        _terminal_step(trajectory)
+        if target_index is None
+        else next(step for step in trajectory.steps if step.index == target_index)
+    )
     action = _action_payload(target)
     if action is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     position, variant_id = _variant(
         ("external_503", "connection_reset", "empty_external_response"), variant_index
     )
     failures = (
-        {"status": 503, "message": "O serviço externo de formulários está indisponível."},
+        {"status": 503, "message": "O serviço externo da ferramenta está indisponível."},
         {"code": "CONNECTION_RESET", "message": "A conexão caiu durante a chamada válida."},
         {"code": "EMPTY_RESPONSE", "message": "A ferramenta não devolveu resultado."},
     )
@@ -651,8 +660,13 @@ def _system_tool_execution_error(
 def _system_llm_limit(
     trajectory: AgentDebugTrajectory,
     variant_index: int,
+    target_index: int | None = None,
 ) -> _InjectedFault:
-    target = _terminal_step(trajectory)
+    target = (
+        _terminal_step(trajectory)
+        if target_index is None
+        else next(step for step in trajectory.steps if step.index == target_index)
+    )
     position, variant_id = _variant(
         ("provider_timeout", "token_budget_exhausted", "context_window_exceeded"),
         variant_index,
@@ -683,9 +697,7 @@ def _system_llm_limit(
         },
     )
     steps = [
-        step.model_copy(deep=True)
-        for step in trajectory.steps
-        if step.index < target.index
+        step.model_copy(deep=True) for step in trajectory.steps if step.index < target.index
     ] + [failed_step]
     return _InjectedFault(
         steps=steps,
@@ -704,7 +716,7 @@ def _system_environment_error(
     target = _terminal_step(trajectory)
     action = _action_payload(target)
     if action is None:
-        raise ValueError("A action terminal não contém um objeto JSON.")
+        raise ValueError("The terminal action does not contain a JSON object.")
     position, variant_id = _variant(
         ("state_commit_lost", "simulator_invariant_broken", "storage_partition"),
         variant_index,
@@ -758,21 +770,38 @@ def inject_fault(
     *,
     trajectory_id: str,
     variant_index: int = 0,
+    distribute_steps: bool = False,
 ) -> tuple[FrontBTrajectory, dict[str, object]]:
-    """Aplica uma mutação controlada em um checkpoint real da Frente A."""
+    """Apply a controlled mutation to a real Front A checkpoint."""
     if not trajectory.success:
-        raise ValueError("A injeção exige uma trajetória baseline bem-sucedida.")
+        raise ValueError("Injection requires a successful baseline trajectory.")
     pair = (fault.target_module, fault.error_type)
     injector = _FAULT_INJECTORS.get(pair)
     if injector is None:
         raise ValueError(
-            "Par de falha não suportado pelo injetor: "
+            "Fault pair not supported by the injector: "
             f"{fault.target_module.value}/{fault.error_type.value}."
         )
-    result = injector(trajectory, variant_index)
+    flexible = injector in {
+        _action_invalid_action,
+        _action_format_error,
+        _system_tool_execution_error,
+        _system_llm_limit,
+    }
+    candidates = [step.index for step in trajectory.steps if _action_payload(step)]
+    if distribute_steps and flexible:
+        # Three textual variants at each compatible position before rotating.
+        target_index = candidates[(variant_index // 3) % len(candidates)]
+        result = injector(trajectory, variant_index, target_index=target_index)
+        result.steps[:] = [step for step in result.steps if step.index <= target_index]
+    else:
+        result = injector(trajectory, variant_index)
     injection = {
         **result.metadata,
         "target_step": result.target_step,
+        "baseline_step_count": len(trajectory.steps),
+        "step_policy": "round_robin_compatible" if distribute_steps and flexible else "semantic",
+        "compatible_steps": candidates if flexible else [result.target_step],
         "target_module": fault.target_module.value,
         "error_type": fault.error_type.value,
     }
@@ -787,7 +816,7 @@ def inject_fault(
 
 
 class ErrorRecoveryDatasetService:
-    """Executa baselines reais e os projeta em casos controlados da Frente B."""
+    """Run real baselines and project them into controlled Front B cases."""
 
     def __init__(
         self,
@@ -802,17 +831,17 @@ class ErrorRecoveryDatasetService:
     ) -> tuple[ExperimentProfile, dict[str, FaultMode]]:
         experiment = load_experiment_profile(campaign.experiment_profile)
         if experiment.front is not ResearchFront.ERROR_RECOVERY:
-            raise ValueError("A campanha de dataset exige um perfil da frente error_recovery.")
+            raise ValueError("A dataset campaign requires an error_recovery front profile.")
         if experiment.error_recovery is None:
-            raise ValueError("O perfil não contém a seção error_recovery.")
+            raise ValueError("The profile has no error_recovery section.")
         catalog = {fault.id: fault for fault in experiment.error_recovery.fault_catalog}
         missing = sorted(set(campaign.fault_ids) - set(catalog))
         if missing:
-            raise ValueError(f"Falhas ausentes no fault_catalog: {', '.join(missing)}")
+            raise ValueError(f"Faults missing from fault_catalog: {', '.join(missing)}")
         selected = {fault_id: catalog[fault_id] for fault_id in campaign.fault_ids}
         for fault in selected.values():
             if (fault.target_module, fault.error_type) not in _FAULT_INJECTORS:
-                raise ValueError(f"Falha não suportada pelo injetor: {fault.id}")
+                raise ValueError(f"Fault not supported by the injector: {fault.id}")
         return experiment, selected
 
     @staticmethod
@@ -845,7 +874,7 @@ class ErrorRecoveryDatasetService:
             trajectory = agent_debug_trajectory(scenario.job_description, execution)
             try:
                 if not trajectory.success:
-                    raise ValueError("baseline não passou no oráculo")
+                    raise ValueError("baseline did not pass the oracle")
                 _terminal_step(trajectory)
             except ValueError:
                 rejected += 1
@@ -909,7 +938,7 @@ class ErrorRecoveryDatasetService:
                             experiment_profile=experiment.name,
                         )
                     _atomic_write(batch_path, scenario.model_dump_json(indent=2) + "\n")
-                except Exception as exc:  # noqa: BLE001 - erro fica persistido para retomada
+                except Exception as exc:  # noqa: BLE001 - the error is persisted for resume
                     message = f"{type(exc).__name__}: {exc}"
                     collection.errors.append(message)
                     _atomic_write(
@@ -952,7 +981,7 @@ class ErrorRecoveryDatasetService:
 
         if campaign.baseline_source_dir is not None and len(collection.baselines) < target:
             collection.errors.append(
-                f"Cache contém {len(collection.baselines)} de {target} baselines necessárias."
+                f"Cache holds {len(collection.baselines)} of the {target} required baselines."
             )
 
         return collection
@@ -964,10 +993,18 @@ class ErrorRecoveryDatasetService:
         *,
         output_dir: Path,
         planned: int,
+        protocol: dict[str, object] | None = None,
     ) -> None:
         path = output_dir / "private" / "manifest.json"
         created_at = datetime.now(UTC).isoformat()
         if path.exists():
+            if protocol is not None:
+                previous = json.loads(path.read_text(encoding="utf-8"))
+                if (
+                    previous.get("protocol") != protocol
+                    or previous.get("planned_executions") != planned
+                ):
+                    raise ValueError("Protocol/model/limit changed. Use another output_dir.")
             try:
                 created_at = json.loads(path.read_text(encoding="utf-8"))["created_at"]
             except (KeyError, TypeError, ValueError):
@@ -979,6 +1016,7 @@ class ErrorRecoveryDatasetService:
             "created_at": created_at,
             "experiment_profile": experiment.name,
             "model": configured_model_identifier(),
+            "protocol": protocol,
             "baseline_source_dir": (
                 str(campaign.baseline_source_dir) if campaign.baseline_source_dir else None
             ),
@@ -990,6 +1028,7 @@ class ErrorRecoveryDatasetService:
             ),
             "planned_executions": planned,
             "planned_fault_distribution": campaign.planned_fault_distribution(limit=planned),
+            "planned_success_controls": campaign.fault_schedule()[:planned].count(None),
             "baseline_batch_size": campaign.baseline_batch_size,
             "front_b_contract_fields": [
                 "trajectory_id",
@@ -1009,26 +1048,37 @@ class ErrorRecoveryDatasetService:
         *,
         output_dir: Path,
         planned: int,
-    ) -> dict[str, str]:
-        """Cria uma atribuição balanceada sem codificar o rótulo no ID público."""
+    ) -> dict[str, str | None]:
+        """Create a balanced assignment without encoding the label in the public ID."""
         path = output_dir / "private" / "fault-assignment.json"
         generation_ids = [_generation_id(position, planned) for position in range(1, planned + 1)]
         if path.exists():
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
-                raise ValueError("private/fault-assignment.json deve conter um objeto.")
-            assignment = {str(key): str(value) for key, value in payload.items()}
+                raise ValueError("private/fault-assignment.json must contain an object.")
+            assignment = {
+                str(key): str(value) if value is not None else None
+                for key, value in payload.items()
+            }
             if set(assignment) != set(generation_ids):
                 raise ValueError(
-                    "A atribuição privada existente não corresponde ao tamanho da campanha. "
-                    "Use outro output_dir para executar com um limit diferente."
+                    "The existing private assignment does not match the campaign size. "
+                    "Use another output_dir to run with a different limit."
                 )
-            if not set(assignment.values()) <= set(campaign.fault_ids):
-                raise ValueError("A atribuição privada contém fault_id desconhecido.")
+            allowed = set(campaign.fault_ids) | ({None} if campaign.success_controls else set())
+            if not set(assignment.values()) <= allowed:
+                raise ValueError("The private assignment contains an unknown fault_id.")
+            if campaign.fault_seed is not None:
+                expected = dict(
+                    zip(generation_ids, campaign.fault_schedule()[:planned], strict=True)
+                )
+                if assignment != expected:
+                    raise ValueError("The private assignment diverges from the campaign seed.")
             return {generation_id: assignment[generation_id] for generation_id in generation_ids}
 
-        schedule = [campaign.fault_ids[index % len(campaign.fault_ids)] for index in range(planned)]
-        random.SystemRandom().shuffle(schedule)
+        schedule = campaign.fault_schedule()[:planned]
+        if campaign.fault_seed is None:
+            random.SystemRandom().shuffle(schedule)
         assignment = dict(zip(generation_ids, schedule, strict=True))
         _atomic_write(path, _json_text(assignment, indent=2) + "\n")
         return assignment
@@ -1044,7 +1094,8 @@ class ErrorRecoveryDatasetService:
         batch_count: int,
         rejected: int,
         errors: dict[str, list[str]],
-        assignment: dict[str, str],
+        assignment: dict[str, str | None],
+        positions: list[int] | None = None,
     ) -> DatasetRunSummary:
         inputs: list[FrontBTrajectory] = []
         ground_truth: list[DatasetGroundTruth] = []
@@ -1053,23 +1104,38 @@ class ErrorRecoveryDatasetService:
         fault_occurrences: Counter[str] = Counter()
         parent_occurrences: Counter[str] = Counter()
 
-        for position, baseline in enumerate(baselines[:planned], start=1):
+        variants: dict[str, int] = {}
+        for case_id, assigned_fault in assignment.items():
+            variants[case_id] = fault_occurrences[assigned_fault]
+            fault_occurrences[assigned_fault] += 1
+        selected_positions = (
+            positions if positions is not None else list(range(1, len(baselines[:planned]) + 1))
+        )
+        for position, baseline in zip(selected_positions, baselines[:planned], strict=True):
             generation_id = _generation_id(position, planned)
             fault_id = assignment[generation_id]
-            fault = faults[fault_id]
-            variant_index = fault_occurrences[fault_id]
-            fault_occurrences[fault_id] += 1
-            injected, injection = inject_fault(
-                baseline.trajectory,
-                fault,
-                trajectory_id=generation_id,
-                variant_index=variant_index,
-            )
+            fault = faults[fault_id] if fault_id is not None else None
+            if fault is None:
+                injected = FrontBTrajectory.from_agent_debug(
+                    baseline.trajectory.model_copy(update={"trajectory_id": generation_id})
+                )
+                injection = {
+                    "operation": "success_control",
+                    "baseline_step_count": len(baseline.trajectory.steps),
+                }
+            else:
+                injected, injection = inject_fault(
+                    baseline.trajectory,
+                    fault,
+                    trajectory_id=generation_id,
+                    variant_index=variants[generation_id],
+                    distribute_steps=campaign.fixed_inputs is not None,
+                )
             parent_trajectory_id = baseline.trajectory.trajectory_id
             parent_occurrences[parent_trajectory_id] += 1
             injection["baseline_reuse_index"] = parent_occurrences[parent_trajectory_id]
             injection["baseline_reuse_total"] = campaign.augmentations_per_baseline
-            target_step = int(injection["target_step"])
+            target_step = int(injection["target_step"]) if fault is not None else None
             truth = DatasetGroundTruth(
                 case_id=generation_id,
                 trajectory_id=injected.trajectory_id,
@@ -1079,8 +1145,8 @@ class ErrorRecoveryDatasetService:
                 seniority=baseline.spec.seniority,
                 fault_id=fault_id,
                 critical_failure_step=target_step,
-                critical_failure_module=fault.target_module,
-                critical_failure_type=fault.error_type,
+                critical_failure_module=fault.target_module if fault else None,
+                critical_failure_type=fault.error_type if fault else None,
                 injection=injection,
             )
             inputs.append(injected)
@@ -1098,16 +1164,25 @@ class ErrorRecoveryDatasetService:
             output_dir / "front-b-input.jsonl",
             "".join(item.model_dump_json() + "\n" for item in inputs),
         )
+        if campaign.fixed_inputs is not None:
+            _atomic_write(
+                output_dir / "detector-input.jsonl",
+                "".join(item.model_dump_json(exclude={"success"}) + "\n" for item in inputs),
+            )
         _atomic_write(
             output_dir / "private" / "provenance.jsonl",
             "".join(item.model_dump_json() + "\n" for item in ground_truth),
         )
         labels = {
-            item.trajectory_id: DatasetLabel.from_ground_truth(item).model_dump(mode="json")
+            item.trajectory_id: (
+                DatasetLabel.from_ground_truth(item).model_dump(mode="json")
+                if item.fault_id is not None
+                else None
+            )
             for item in ground_truth
         }
         _atomic_write(output_dir / "labels.json", _json_text(labels, indent=2) + "\n")
-        counts = Counter(item.fault_id for item in ground_truth)
+        counts = Counter(item.fault_id for item in ground_truth if item.fault_id is not None)
         recorded = len(inputs)
         summary = DatasetRunSummary(
             campaign=campaign.name,
@@ -1116,6 +1191,7 @@ class ErrorRecoveryDatasetService:
             pending_executions=max(0, planned - recorded),
             complete=recorded == planned,
             counts_by_fault=dict(counts),
+            successful_controls=sum(item.success for item in inputs),
             unique_baselines=len({item.parent_trajectory_id for item in ground_truth}),
             augmentations_per_baseline=campaign.augmentations_per_baseline,
             baseline_batches=batch_count,
@@ -1136,14 +1212,20 @@ class ErrorRecoveryDatasetService:
         max_parallel: int | None = None,
         output_dir: Path | None = None,
     ) -> DatasetRunSummary:
+        if campaign.fixed_inputs is not None:
+            from src.services.dataset.fixed import run_fixed_dataset  # noqa: PLC0415
+
+            return await run_fixed_dataset(
+                self, campaign, limit=limit, max_parallel=max_parallel, output_dir=output_dir
+            )
         if limit is not None and limit < 1:
-            raise ValueError("limit deve ser maior que zero.")
+            raise ValueError("limit must be greater than zero.")
         experiment, faults = self._experiment(campaign)
         destination = output_dir or campaign.output_dir
         planned = min(limit, campaign.planned_executions) if limit else campaign.planned_executions
         parallelism = max_parallel or campaign.max_parallel
         if not 1 <= parallelism <= _MAX_PARALLEL:
-            raise ValueError("max_parallel deve estar entre 1 e 10.")
+            raise ValueError("max_parallel must be between 1 and 10.")
         destination.mkdir(parents=True, exist_ok=True)
         self._write_manifest(
             campaign,

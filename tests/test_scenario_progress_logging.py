@@ -98,7 +98,7 @@ class FakeQuestionnaireService:
 
 class FailingJobService:
     async def generate(self, brief: str, *, scenario_id: str) -> JobDescription:
-        raise RuntimeError("falha simulada")
+        raise RuntimeError("simulated failure")
 
 
 @pytest.mark.asyncio
@@ -163,7 +163,7 @@ async def test_pipeline_logs_the_stage_that_failed(monkeypatch):
     monkeypatch.setattr(scenario_module, "logger", logger)
     service = ScenarioService(job_service=FailingJobService())  # type: ignore[arg-type]
 
-    with pytest.raises(RuntimeError, match="falha simulada"):
+    with pytest.raises(RuntimeError, match="simulated failure"):
         await service.run("Vaga backend Python", benign_count=1, malicious_count=0)
 
     failure = logger.exception.call_args

@@ -1,5 +1,7 @@
 # Por que algumas falhas do dataset estão no `step 3`?
 
+[🇺🇸 English](step-3-labels.md) · 🇧🇷 **Português** · [Início](../README.pt-BR.md)
+
 Isso é **intencional** e não representa erro de indexação.
 
 Algumas execuções originais precisaram corrigir um problema recuperável antes
@@ -78,3 +80,6 @@ resultado final**.
 Essa característica torna o dataset mais realista: ele mede atribuição causal
 e capacidade de distinguir uma falha intermediária recuperável de uma falha
 terminal.
+
+A campanha fixa de 300 amostras não tem esse padrão: ela só aceita baselines sem
+erros naturais, então um erro recuperado nunca precede o rótulo.

@@ -11,12 +11,12 @@ _DEFAULT_MAX_QUESTIONS = 10
 
 
 def compose_coordinator_command(command: str | None) -> tuple[str, str]:
-    """Mantém comando e diretrizes em variáveis separadas para preservar a cerca XML."""
+    """Keep the command and guidelines in separate variables to preserve the XML fence."""
     return (command or "").strip(), PLATFORM_DEFAULT_GUIDELINES
 
 
 def strip_por_favor(text: str) -> str:
-    """Pós-processamento portado do PR #91 do rh-agent-agno."""
+    """Post-processing ported from rh-agent-agno PR #91."""
     cleaned = _POR_FAVOR_RE.sub("", text, count=1)
     if cleaned == text or not cleaned:
         return text

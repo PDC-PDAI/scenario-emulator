@@ -12,15 +12,15 @@ logger = structlog.get_logger(__name__)
 
 @lru_cache(maxsize=1)
 def get_langfuse_client() -> Any | None:
-    """Retorna o client global somente quando todas as credenciais estão presentes."""
+    """Return the global client only when every credential is present."""
     if not settings.langfuse_configured:
         return None
     try:
-        # Import tardio: o .env já foi carregado em src.settings antes do SDK.
+        # Late import: src.settings has already loaded .env before the SDK.
         from langfuse import get_client  # noqa: PLC0415
 
         return get_client()
-    except Exception as exc:  # pragma: no cover - depende do SDK/ambiente
+    except Exception as exc:  # pragma: no cover - depends on the SDK/environment
         logger.warning("langfuse.client_unavailable", error=str(exc))
         return None
 

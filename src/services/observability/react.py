@@ -1,8 +1,8 @@
-"""Timeline ReAct ordenada, portada de rh-agent-agno commit 8dc3eab.
+"""Ordered ReAct timeline, ported from rh-agent-agno commit 8dc3eab.
 
-Cada turno emite ``reasoning -> action:<tool> -> observation`` em tempo real.
-Quando o modelo não fornece summary de reasoning, registramos apenas a decisão
-observável de escolher a tool, nunca chain-of-thought inventado.
+Each turn emits ``reasoning -> action:<tool> -> observation`` in real time.
+When the model provides no reasoning summary, only the observable decision to
+choose the tool is recorded, never an invented chain of thought.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class ReactSpanStreamer:
 
     @property
     def trajectory_steps(self) -> list[AgentDebugTrajectoryStep]:
-        """Snapshot dos checkpoints capturados, independente do Langfuse."""
+        """Snapshot of the captured checkpoints, independent of Langfuse."""
         return [step.model_copy(deep=True) for step in self._steps]
 
     @staticmethod
@@ -83,7 +83,7 @@ class ReactSpanStreamer:
                 if not emitted:
                     emitted = self._emit_tool_selection(event, self._step)
                 if emitted:
-                    # O backend persiste milissegundos; evita empate visual com a action.
+                    # The backend stores milliseconds; avoid a visual tie with the action.
                     await asyncio.sleep(_LANGFUSE_TIMESTAMP_TICK_SECONDS)
                 self._on_started(event, self._step)
         elif isinstance(event, (ToolCallCompletedEvent, ToolCallErrorEvent)):
@@ -128,6 +128,7 @@ class ReactSpanStreamer:
         return True
 
     def _current_step_input(self) -> str:
+        # Step inputs and planning fallbacks are trajectory content, kept in Portuguese.
         parts = [self._initial_input.strip()]
         if self._environment_history:
             parts.append(
@@ -193,7 +194,7 @@ class ReactSpanStreamer:
         final_output: Any = None,
         planning: str = "",
     ) -> None:
-        """Registra falha sem tool terminal como um step analisável."""
+        """Record a failure without a terminal tool as an analyzable step."""
         self._step += 1
         action_payload = {
             "operation": "agent_response_without_terminal_tool",
