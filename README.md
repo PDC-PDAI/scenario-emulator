@@ -79,7 +79,9 @@ and campaign paths are relative to the working directory.
 
    The command writes `scenario.json`, `benchmark.jsonl`, `agent-debug.jsonl`
    and `trajectories/` under `outputs/error_recovery/`, then prints how many
-   trajectories passed the scenario oracle. `error_recovery` is also the default
+   trajectories passed the scenario oracle. A real run can fail the oracle, for
+   example by saving the wrong number of questions; its trajectory is still saved,
+   and that failure is what Front B diagnoses. `error_recovery` is also the default
    profile when `--profile` is omitted; without `--benign` it generates three
    benign commands. The [Front A guide](docs/error-recovery.md#generate-trajectories)
    shows how to write each run to its own directory.

@@ -79,7 +79,9 @@ de trabalho.
 
    O comando grava `scenario.json`, `benchmark.jsonl`, `agent-debug.jsonl` e
    `trajectories/` em `outputs/error_recovery/` e informa quantas trajetórias
-   passaram no oráculo do cenário. `error_recovery` também é o perfil padrão
+   passaram no oráculo do cenário. Uma execução real pode reprovar no oráculo,
+   por exemplo ao salvar a quantidade errada de perguntas; a trajetória é salva
+   mesmo assim, e é essa falha que a Frente B diagnostica. `error_recovery` também é o perfil padrão
    quando `--profile` é omitido; sem `--benign`, ele gera três comandos
    benignos. O [guia da Frente A](docs/error-recovery.pt-BR.md#gerando-trajetórias)
    mostra como gravar cada execução em um diretório próprio.
