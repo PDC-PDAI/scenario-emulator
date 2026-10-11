@@ -107,8 +107,26 @@ falhas. O OpenRouter recebe `require_parameters=true` e `allow_fallbacks=false`.
 Os IDs foram conferidos no catálogo: [Gemma 31B](https://openrouter.ai/google/gemma-4-31b-it),
 [Gemma 26B](https://openrouter.ai/google/gemma-4-26b-a4b-it) e
 [Qwen 9B](https://openrouter.ai/qwen/qwen3.5-9b).
-O nome **“GLM 3.5 Flash 320B” ainda precisa de confirmação**; nenhum outro
-modelo foi colocado no lugar. Depois de confirmar, use seu ID em `--model`.
+O modelo informado inicialmente como “GLM 3.5 Flash” foi confirmado como
+[GLM 5.3 Flash](https://openrouter.ai/z-ai/glm-5.3-flash), ID `z-ai/glm-5.3-flash`.
+Na verificação de 21/09/2026, os endpoints `gmicloud/fp8`, `z-ai/fp8`,
+`deepinfra/fp4` e `fireworks` recusaram `reasoning.enabled=false` com HTTP 400:
+`Reasoning is mandatory for this endpoint and cannot be disabled.`
+A coleta não produziu amostras aceitas. Este modelo permanece incompatível
+com o protocolo atual; habilitar reasoning exige registrar a diferença experimental.
+
+O substituto selecionado foi o [GLM 5.2](https://openrouter.ai/z-ai/glm-5.2),
+ID `z-ai/glm-5.2`, pelo endpoint `deepinfra/fp4`. A coleta foi concluída com
+**300 amostras validadas: 60 controles e 240 falhas**, sem pendências, após
+retomar 11 casos afetados por erros de infraestrutura. A
+[entrega local](outputs/front-a-300/z-ai_glm-5.2/drive-five-jsons) contém
+os cinco JSONs da Frente A e o `frontc-replay.json`, com 300 registros.
+As sondagens retornaram zero tokens de reasoning, e todas as execuções
+registram reasoning desativado. A coleta usa uma cópia isolada do runtime
+original do Gemma, com hash
+`c4b0a44dd666ab15a3ee7b2cf369286750910929fc9164da029a494004ab54e4`,
+o mesmo corpus e a mesma atribuição de falhas. As adaptações posteriores
+específicas do Qwen não são aplicadas a essa coleta.
 
 **Distribuição:** `success_controls: 60` reserva seis controles corretos por vaga,
 selecionados com seed fixa. Os 240 casos restantes recebem os onze tipos de falha:

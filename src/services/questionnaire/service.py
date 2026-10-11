@@ -54,7 +54,7 @@ logger = structlog.get_logger(__name__)
 
 
 class QuestionnaireService:
-    async def execute(  # noqa: PLR0915 - o fluxo linear espelha o ciclo ReAct auditável
+    async def execute(  # noqa: PLR0912, PLR0915 - fluxo linear de execução auditável
         self,
         job: JobDescription,
         coordinator_prompt: CoordinatorPrompt,
@@ -241,8 +241,10 @@ class QuestionnaireService:
             # run parcial (com as mensagens até a falha) da sessão em memória.
             final_output = recover_run_output(agent, final_output)
 
+            task_completed = state.get("questionnaire") is not None
             if (
-                run_error is None
+                not task_completed
+                and run_error is None
                 and final_output is not None
                 and getattr(final_output, "status", None) is RunStatus.error
             ):
@@ -286,12 +288,18 @@ class QuestionnaireService:
                     generation.update(usage_details=usage)
 
             status, failure_reason = self._status_from_state(state, run_error)
-            if run_error is not None:
+            if run_error is not None and not task_completed:
                 streamer.record_terminal_failure(
                     code="AGENT_RUNTIME_ERROR",
                     message=str(run_error),
                     final_output=result_content,
                     planning=reasoning or "",
+                )
+            elif run_error is not None:
+                logger.warning(
+                    "questionnaire.runtime_error_after_successful_save",
+                    trajectory_id=trajectory_id,
+                    error=str(run_error),
                 )
             elif (
                 status is ExecutionStatus.FAILED and failure_reason == "MISSING_TERMINAL_TOOL_CALL"

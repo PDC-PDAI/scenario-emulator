@@ -13,22 +13,38 @@ class BudgetExceeded(RuntimeError):
 
 
 class BudgetLedger:
-    # Full advertised context plus the unchanged completion limit, with 10% margin.
-    # Provider max_price in each request prevents a price increase from bypassing this.
+    # The default reservation assumes the full advertised context. The transport
+    # can reserve more tightly from the serialized request size, plus a generous
+    # framing allowance, while retaining the unchanged completion limit and margin.
     reserve_usd = (Decimal(262144) * Decimal('0.0000001')
                    + Decimal(8192) * Decimal('0.00000015')) * Decimal('1.10')
+    framing_tokens = 16384
+    completion_tokens = 8192
+    input_usd_per_token = Decimal('0.0000001')
+    output_usd_per_token = Decimal('0.00000015')
+    margin = Decimal('1.10')
 
     def __init__(self, path: Path, limit: str = '1.00'):
         self.path = path
-        self.limit = Decimal(limit)
+        requested_limit = Decimal(limit)
         self.data = json.loads(path.read_text()) if path.exists() else {
-            'limit_usd': str(self.limit), 'requests': [],
+            'limit_usd': str(requested_limit), 'requests': [],
             'context_bound': 262144, 'completion_bound': 8192,
             'margin': '1.10', 'provider': 'deepinfra/bf16',
             'pricing_source': 'https://openrouter.ai/api/v1/models/qwen/qwen3.5-9b/endpoints',
         }
-        if Decimal(self.data['limit_usd']) != self.limit:
-            raise ValueError('Cannot change the budget of an existing ledger.')
+        stored_limit = Decimal(self.data['limit_usd'])
+        if stored_limit != requested_limit:
+            authorized_limit = requested_limit
+            for change in self.data.get('limit_changes', []):
+                if (Decimal(change['from_usd']) != authorized_limit
+                        or Decimal(change['to_usd']) <= authorized_limit
+                        or not change.get('authorized_at')):
+                    raise ValueError('Invalid authorized budget increase in ledger.')
+                authorized_limit = Decimal(change['to_usd'])
+            if authorized_limit != stored_limit:
+                raise ValueError('Cannot change the budget of an existing ledger.')
+        self.limit = stored_limit
 
     @property
     def committed(self):
@@ -43,10 +59,17 @@ class BudgetLedger:
         temporary.write_text(json.dumps(self.data, indent=2) + '\n')
         temporary.replace(self.path)
 
-    def reserve(self):
-        if self.data.get('halted') or self.committed + self.reserve_usd > self.limit:
+    def reserve(self, input_bytes: int | None = None):
+        input_tokens = (262144 if input_bytes is None else
+                        min(262144, input_bytes + self.framing_tokens))
+        upper_bound = (Decimal(input_tokens) * self.input_usd_per_token
+                       + Decimal(self.completion_tokens) * self.output_usd_per_token) * self.margin
+        if self.data.get('halted') or self.committed + upper_bound > self.limit:
             raise BudgetExceeded('USD budget exhausted; request blocked before network send.')
-        record = {'upper_bound_usd': str(self.reserve_usd), 'state': 'reserved'}
+        record = {'upper_bound_usd': str(upper_bound),
+                  'input_token_upper_bound': input_tokens,
+                  'completion_token_upper_bound': self.completion_tokens,
+                  'state': 'reserved'}
         self.data['requests'].append(record)
         self.save()  # Durable before sending; a crash retains the entire reservation.
         return len(self.data['requests']) - 1
@@ -55,12 +78,13 @@ class BudgetLedger:
         record = self.data['requests'][index]
         if record['state'] == 'settled':
             return
-        if not cost.is_finite() or cost < 0 or cost * Decimal('1.10') > self.reserve_usd:
+        if (not cost.is_finite() or cost < 0
+                or cost * self.margin > Decimal(record['upper_bound_usd'])):
             self.data['halted'] = True
             self.save()
             raise BudgetExceeded('Unexpected billing value; further requests blocked.')
         record.update(state='settled', reported_cost_usd=str(cost),
-                      upper_bound_usd=str(cost * Decimal('1.10')))
+                      upper_bound_usd=str(cost * self.margin))
         self.save()
 
 
@@ -130,7 +154,7 @@ class BudgetTransport(httpx.AsyncBaseTransport):
                 or provider.get('require_parameters') is not True
                 or provider.get('max_price') != {'prompt': 0.1, 'completion': 0.15, 'request': 0}):
             raise ValueError('Request is missing the authorized routing/price ceiling.')
-        index = self.ledger.reserve()
+        index = self.ledger.reserve(len(request.content or b''))
         response = await self.inner.handle_async_request(request)
         response.stream = MeteredStream(response.stream, self.ledger, index)
         return response

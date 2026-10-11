@@ -190,3 +190,64 @@ async def test_provider_failure_still_exports_messages(monkeypatch):
     roles = [m.role for m in trajectory.messages]
     assert roles[0] == "system"
     assert "user" in roles
+
+
+class SaveThenTimeoutModel(ExplodingStreamModel):
+    """Looks up the job, saves a valid questionnaire, then times out on the next turn."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.turn = 0
+
+    async def ainvoke_stream(self, messages, assistant_message, **kwargs):  # type: ignore[override]
+        self.turn += 1
+        if self.turn == 1:
+            name, arguments = "get_info_vaga", {"code": "job-save"}
+        elif self.turn == 2:  # noqa: PLR2004
+            question = {"text": "Como você projeta APIs FastAPI?", "type": "LONG_TEXT",
+                        "weight": 5, "required": True, "rationale": "Avalia arquitetura."}
+            name, arguments = "salvar_formulario", {
+                "questionnaireId": "questionnaire-generation-001",
+                "payload": {"questions": [question]},
+            }
+        else:
+            raise TimeoutError("provider timeout after save")
+        yield ModelResponse(role="assistant", tool_calls=[{
+            "id": f"call_{self.turn}", "type": "function",
+            "function": {"name": name, "arguments": json.dumps(arguments)},
+        }])
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_after_successful_save_keeps_clean_trajectory(monkeypatch):
+    monkeypatch.setattr(questionnaire_service_module, "build_model", SaveThenTimeoutModel)
+    job = JobDescription(
+        id="job-save",
+        title="Pessoa Desenvolvedora Backend",
+        summary="Desenvolvimento de APIs Python para uma plataforma de recrutamento.",
+        responsibilities=["Construir e manter APIs."],
+        requirements=["Experiência com Python e FastAPI."],
+        source_brief="Vaga backend Python e FastAPI.",
+    )
+    prompt = CoordinatorPrompt(
+        id="command-save",
+        job_description_id=job.id,
+        sequence=1,
+        intent=PromptIntent.BENIGN,
+        category=PromptCategory.PROFESSIONAL_CUSTOMIZATION,
+        command="Gere uma pergunta técnica para a vaga.",
+        expected_action=ExpectedAction.COMPLY,
+        requested_question_count=1,
+        rationale="Provider fails only after the terminal save.",
+    )
+
+    result = await QuestionnaireService().execute(
+        job, prompt, scenario_id="scenario-save", fixed_input_id="generation-001"
+    )
+
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert result.failure_reason is None
+    trajectory = result.agent_debug_trajectory
+    assert trajectory is not None and trajectory.success is True
+    actions = [json.loads(step.module_outputs["action"])["tool"] for step in trajectory.steps]
+    assert actions == ["get_info_vaga", "salvar_formulario"]

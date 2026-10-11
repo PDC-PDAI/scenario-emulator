@@ -8,6 +8,14 @@ from openai import APIConnectionError, AsyncOpenAI
 
 from scripts.budget_transport import BudgetExceeded, BudgetLedger, BudgetTransport, MeteredStream
 
+CONTEXT_TOKENS = 262144
+
+
+@pytest.fixture
+def worst_case_reservations(monkeypatch):
+    # Size-independent reservations: every request reserves the full advertised context.
+    monkeypatch.setattr(BudgetLedger, 'framing_tokens', CONTEXT_TOKENS)
+
 
 def body():
     return {'model': 'qwen/qwen3.5-9b', 'temperature': 0, 'top_p': 1,
@@ -17,7 +25,7 @@ def body():
                          'max_price': {'prompt': 0.1, 'completion': 0.15, 'request': 0}}}
 
 
-def test_parallel_reservations_cannot_overspend_and_survive_restart(tmp_path):
+def test_parallel_reservations_cannot_overspend_and_survive_restart(tmp_path, worst_case_reservations):
     async def scenario():
         ledger = BudgetLedger(tmp_path / 'budget.json', '0.07')
         sent = []
@@ -41,7 +49,7 @@ def test_parallel_reservations_cannot_overspend_and_survive_restart(tmp_path):
     asyncio.run(scenario())
 
 
-def test_usage_settles_but_missing_usage_keeps_full_reservation(tmp_path):
+def test_usage_settles_but_missing_usage_keeps_full_reservation(tmp_path, worst_case_reservations):
     async def scenario():
         ledger = BudgetLedger(tmp_path / 'budget.json')
         replies = iter([
@@ -89,7 +97,7 @@ def test_fragmented_sse_and_unexpected_cost_halt(tmp_path):
     assert json.loads((tmp_path / 'budget.json').read_text())['halted'] is True
 
 
-def test_openai_sdk_retries_are_individually_budgeted(tmp_path):
+def test_openai_sdk_retries_are_individually_budgeted(tmp_path, worst_case_reservations):
     async def scenario():
         ledger = BudgetLedger(tmp_path / 'budget.json', '0.07')
         sent = []
@@ -110,3 +118,34 @@ def test_openai_sdk_retries_are_individually_budgeted(tmp_path):
         assert len(sent) == 2  # noqa: PLR2004
         assert ledger.committed == 2 * ledger.reserve_usd < Decimal('0.07')
     asyncio.run(scenario())
+
+
+def test_reservation_is_sized_from_the_serialized_request(tmp_path):
+    ledger = BudgetLedger(tmp_path / 'budget.json')
+    small = ledger.data['requests'][ledger.reserve(1000)]
+    assert small['input_token_upper_bound'] == 1000 + ledger.framing_tokens
+    assert Decimal(small['upper_bound_usd']) == (
+        Decimal(1000 + ledger.framing_tokens) * ledger.input_usd_per_token
+        + Decimal(ledger.completion_tokens) * ledger.output_usd_per_token) * ledger.margin
+    huge = ledger.data['requests'][ledger.reserve(10**9)]
+    unknown = ledger.data['requests'][ledger.reserve()]
+    assert huge['input_token_upper_bound'] == unknown['input_token_upper_bound'] == CONTEXT_TOKENS
+    assert Decimal(huge['upper_bound_usd']) == Decimal(unknown['upper_bound_usd']) == ledger.reserve_usd
+
+
+def test_only_recorded_authorized_increases_change_an_existing_budget(tmp_path):
+    path = tmp_path / 'budget.json'
+    BudgetLedger(path).save()
+    data = json.loads(path.read_text())
+    data['limit_usd'] = '1.50'
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='Cannot change'):
+        BudgetLedger(path)
+    data['limit_changes'] = [{'from_usd': '1.00', 'to_usd': '1.50',
+                              'authorized_at': '2026-09-21T00:32:51+00:00'}]
+    path.write_text(json.dumps(data))
+    assert BudgetLedger(path).limit == Decimal('1.50')
+    data['limit_changes'][0]['authorized_at'] = ''
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='Invalid authorized budget increase'):
+        BudgetLedger(path)
