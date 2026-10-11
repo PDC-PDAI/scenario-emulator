@@ -35,7 +35,7 @@ def test_routing_preserves_generation_parameters_and_original_body():
 
 
 def test_routing_rejects_non_campaign_context():
-    with pytest.raises(ValueError, match="campanha fixa"):
+    with pytest.raises(ValueError, match="fixed campaign"):
         routed_model("deepinfra/bf16")
 
 
@@ -57,5 +57,5 @@ def test_routing_audit_rejects_changed_checkpoint(tmp_path):
     ):
         assert routing_for_accepted(tmp_path)["generation-001"]["provider"]["order"] == ["deepinfra/bf16"]
         checkpoint.write_text('{"modified": true}')
-        with pytest.raises(ValueError, match="Auditoria de roteamento divergente"):
+        with pytest.raises(ValueError, match="Routing audit mismatch"):
             routing_for_accepted(tmp_path)

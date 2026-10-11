@@ -36,7 +36,7 @@ def _render_local(name: str, template: str, variables: dict[str, Any]) -> str:
 
     rendered = _VARIABLE_RE.sub(replace, template)
     if missing:
-        raise KeyError(f"Prompt {name!r}: variáveis ausentes: {sorted(set(missing))}")
+        raise KeyError(f"Prompt {name!r}: missing variables: {sorted(set(missing))}")
     return rendered
 
 
@@ -65,7 +65,7 @@ def resolve_prompt(
                 labels=tuple(remote.labels),
                 langfuse_prompt=remote,
             )
-        except Exception as exc:  # pragma: no cover - rede/serviço externo
+        except Exception as exc:  # pragma: no cover - network/external service
             logger.warning(
                 "prompt.langfuse_fallback",
                 prompt_name=name,

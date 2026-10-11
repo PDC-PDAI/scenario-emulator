@@ -1,7 +1,7 @@
 [project]
 name = "scenario-emulator"
 version = "0.1.0"
-description = "Simulador de falhas da Frente A para AgentDebug-RH"
+description = "Front A failure simulator for AgentDebug-RH"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

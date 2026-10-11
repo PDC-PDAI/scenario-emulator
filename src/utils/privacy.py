@@ -21,7 +21,7 @@ def redact_text(value: str) -> str:
 
 
 def redact_for_trace(value: Any) -> Any:
-    """Remove PII/segredos de estruturas antes que elas alcancem o Langfuse."""
+    """Strip PII/secrets from structures before they reach Langfuse."""
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, dict):

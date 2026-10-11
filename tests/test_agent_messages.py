@@ -1,4 +1,4 @@
-"""Captura da conversa (``messages``) para o re-rollout da Frente C."""
+"""Conversation capture (``messages``) for the Front C re-rollout."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_clean_agent_messages_preserves_conversation_order_and_ids():
     call = messages[2].tool_calls[0]
     assert call.id == "call_1"
     assert call.name == "get_info_vaga"
-    assert call.arguments == {"code": "job-1"}  # argumentos JSON viram dict
+    assert call.arguments == {"code": "job-1"}  # JSON arguments become a dict
 
     tool = messages[3]
     assert tool.tool_call_id == "call_1"
@@ -124,12 +124,12 @@ def test_saved_trajectory_round_trips_messages(tmp_path):
     assert len(with_messages.messages) == _CONVERSATION_LENGTH
     assert with_messages.messages[2].tool_calls[0].id == "call_1"
 
-    # Trajetória sem captura mantém o arquivo no formato de antes (sem a chave).
+    # A trajectory without capture keeps the previous file format (no key).
     assert "messages" not in json.loads(paths[1].read_text(encoding="utf-8"))
 
 
 class ExplodingStreamModel(Model):
-    """Um delta e depois TimeoutError: o Agno emite RunErrorEvent SEM RunOutput."""
+    """One delta, then TimeoutError: Agno emits RunErrorEvent WITHOUT RunOutput."""
 
     def __init__(self) -> None:
         super().__init__(id="exploding-model", name="Exploding", provider="Test")
@@ -156,9 +156,9 @@ class ExplodingStreamModel(Model):
 
 @pytest.mark.asyncio
 async def test_provider_failure_still_exports_messages(monkeypatch):
-    # Caminho apontado na revisão: erro de provider/timeout → RunErrorEvent sem
-    # RunOutput. A conversa até o turno da falha deve ser recuperada da sessão
-    # em memória e sair na trajetória.
+    # Path raised in review: provider error/timeout → RunErrorEvent without
+    # RunOutput. The conversation up to the failing turn must be recovered from
+    # the in-memory session and appear in the trajectory.
     monkeypatch.setattr(questionnaire_service_module, "build_model", ExplodingStreamModel)
     job = JobDescription(
         id="job-err",
@@ -186,7 +186,7 @@ async def test_provider_failure_still_exports_messages(monkeypatch):
     assert (result.failure_reason or "").startswith("AGENT_RUNTIME_ERROR")
     trajectory = result.agent_debug_trajectory
     assert trajectory is not None
-    assert trajectory.messages, "a conversa deve ser recuperada mesmo sem RunOutput no stream"
+    assert trajectory.messages, "the conversation must be recovered even without RunOutput in the stream"
     roles = [m.role for m in trajectory.messages]
     assert roles[0] == "system"
     assert "user" in roles

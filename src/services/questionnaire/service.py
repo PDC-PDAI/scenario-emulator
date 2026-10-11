@@ -54,7 +54,7 @@ logger = structlog.get_logger(__name__)
 
 
 class QuestionnaireService:
-    async def execute(  # noqa: PLR0912, PLR0915 - fluxo linear de execução auditável
+    async def execute(  # noqa: PLR0912, PLR0915 - linear, auditable execution flow
         self,
         job: JobDescription,
         coordinator_prompt: CoordinatorPrompt,
@@ -91,6 +91,8 @@ class QuestionnaireService:
         )
         state: dict[str, Any] = {"tool_sequence": []}
 
+        # Tool docstrings become the tool descriptions sent to the model, and tool
+        # responses are read by it. Like the prompts, they stay in Portuguese.
         def get_info_vaga(code: str) -> dict[str, Any]:
             """Busca os dados da vaga atual pelo código."""
             state["tool_sequence"].append("get_info_vaga")
@@ -185,14 +187,14 @@ class QuestionnaireService:
                 name="generator_agent",
                 model=model,
                 description=system.content,
-                # Como no modo native-toolcall do rh-agent-agno, o payload canônico
-                # vem dos argumentos de salvar_formulario. Sem output_schema aqui, o
-                # Agno não força strict=True em todas as tools (incompatível com o
-                # campo opcional `description` do contrato real).
+                # As in rh-agent-agno's native-toolcall mode, the canonical payload
+                # comes from the salvar_formulario arguments. Without output_schema
+                # here, Agno does not force strict=True on every tool (incompatible
+                # with the optional `description` field of the real contract).
                 output_schema=None,
-                # OpenAI ativa strict automaticamente quando há output_schema. O contrato
-                # possui `description` legitimamente opcional; como no rh-agent-agno,
-                # desabilitamos strict nas tools sem relaxar a validação Pydantic local.
+                # OpenAI enables strict automatically when output_schema is set. The
+                # contract has a legitimately optional `description`; as in rh-agent-agno,
+                # strict is disabled on the tools without relaxing local Pydantic validation.
                 tools=[
                     Function.from_callable(get_info_vaga, strict=False),
                     Function.from_callable(salvar_formulario, strict=False),
@@ -201,11 +203,11 @@ class QuestionnaireService:
                 tool_call_limit=6,
                 debug_mode=settings.AGNO_DEBUG,
                 debug_level=settings.AGNO_DEBUG_LEVEL,
-                # Sessão em memória por request: em erro de provider/timeout o Agno
-                # encerra o stream sem entregar o RunOutput, mas persiste o run
-                # (status=error, com as mensagens até a falha) na sessão — é de lá
-                # que get_last_run_output() recupera a conversa. Sem db, esse
-                # caminho de recuperação não existe.
+                # In-memory session per request: on a provider error or timeout, Agno
+                # closes the stream without delivering the RunOutput but persists the
+                # run (status=error, with the messages up to the failure) in the
+                # session, where get_last_run_output() recovers the conversation.
+                # Without a db, that recovery path does not exist.
                 db=InMemoryDb(),
             )
             streamer = ReactSpanStreamer(
@@ -229,7 +231,7 @@ class QuestionnaireService:
                         run_error = RuntimeError(str(detail))
                     else:
                         await streamer.handle(event)
-            except Exception as exc:  # noqa: BLE001 - falha vira dado experimental
+            except Exception as exc:  # noqa: BLE001 - the failure becomes experimental data
                 run_error = exc
                 logger.exception(
                     "questionnaire.execution_failed",
@@ -237,8 +239,8 @@ class QuestionnaireService:
                     coordinator_prompt_id=coordinator_prompt.id,
                 )
 
-            # Erro de provider/timeout termina o stream sem RunOutput; recupera o
-            # run parcial (com as mensagens até a falha) da sessão em memória.
+            # A provider error or timeout ends the stream without RunOutput; recover
+            # the partial run (with the messages up to the failure) from the session.
             final_output = recover_run_output(agent, final_output)
 
             task_completed = state.get("questionnaire") is not None
@@ -362,8 +364,8 @@ class QuestionnaireService:
                         "question_count": len(result.questionnaire.questions)
                         if result.questionnaire
                         else 0,
-                        # A conversa crua já vive no arquivo exportado; o span não
-                        # duplica prompts/observações inteiros no Langfuse.
+                        # The raw conversation already lives in the exported file; the
+                        # span does not duplicate whole prompts/observations in Langfuse.
                         "agent_debug_trajectory": trajectory.model_dump(
                             mode="json", exclude={"messages"}
                         ),
@@ -371,7 +373,7 @@ class QuestionnaireService:
                     }
                 ),
                 level="DEFAULT" if benchmark_passed else "ERROR",
-                status_message=(failure_reason or "Resultado divergente do oráculo")
+                status_message=(failure_reason or "Outcome diverges from the oracle")
                 if not benchmark_passed
                 else None,
             )
@@ -390,7 +392,7 @@ class QuestionnaireService:
         if isinstance(content, str):
             try:
                 return parse_model_output(content, LLMQuestionnaireResult).reasoning
-            except Exception:  # noqa: BLE001 - conteúdo de modelo não confiável
+            except Exception:  # noqa: BLE001 - untrusted model content
                 return None
         return None
 

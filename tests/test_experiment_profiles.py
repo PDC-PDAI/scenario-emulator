@@ -54,7 +54,7 @@ def test_profile_rejects_security_front_and_replay():
     with pytest.raises(ValidationError):
         ExperimentProfile.model_validate({**profile, "front": "security"})
     profile["error_recovery"]["replay_enabled"] = True
-    with pytest.raises(ValidationError, match="contrato HTTP de re-rollout"):
+    with pytest.raises(ValidationError, match="re-rollout HTTP contract"):
         ExperimentProfile.model_validate(profile)
 
 

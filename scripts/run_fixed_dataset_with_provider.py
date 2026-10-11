@@ -1,4 +1,4 @@
-"""Retoma uma campanha fixa com roteamento explícito, sem mudar seus prompts."""
+"""Resume a fixed campaign with explicit routing, without changing its prompts."""
 
 from __future__ import annotations
 
@@ -30,9 +30,9 @@ def write_json(path: Path, payload: object) -> None:
 
 
 def routed_model(provider: str):
-    """A única diferença no request é a preferência de roteamento autorizada."""
+    """The only request difference is the authorized routing preference."""
     if dataset_generation.get() is None:
-        raise ValueError("O roteamento exige o contexto de uma campanha fixa.")
+        raise ValueError("Routing requires a fixed campaign context.")
     model = build_model()
     model.extra_body = {
         **model.extra_body,
@@ -73,7 +73,7 @@ class AuditedQuestionnaireService(QuestionnaireService):
 
 
 def routing_for_accepted(private: Path) -> dict:
-    """Vincula o roteamento ao conteúdo exato de cada checkpoint aprovado."""
+    """Bind the routing to the exact content of each approved checkpoint."""
     assignment = json.loads((private / "fault-assignment.json").read_text())
     records = {}
     for checkpoint in sorted((private / "fixed-executions").glob("*.json")):
@@ -89,7 +89,7 @@ def routing_for_accepted(private: Path) -> dict:
         if audit.exists():
             record = json.loads(audit.read_text())
             if record["checkpoint_sha256"] != digest or record["case_id"] != checkpoint.stem:
-                raise ValueError(f"Auditoria de roteamento divergente: {checkpoint.name}")
+                raise ValueError(f"Routing audit mismatch: {checkpoint.name}")
             records[checkpoint.stem] = record
         else:
             records[checkpoint.stem] = {
@@ -104,7 +104,7 @@ def routing_for_accepted(private: Path) -> dict:
 async def run(args) -> int:
     campaign = load_dataset_campaign_profile(args.campaign)
     if campaign.generation is None or campaign.fixed_inputs is None:
-        raise ValueError("Use uma campanha com entradas fixas e parâmetros de geração.")
+        raise ValueError("Use a campaign with fixed inputs and generation parameters.")
     campaign = campaign.model_copy(
         update={
             "generation": campaign.generation.model_copy(update={"model": args.model}),
@@ -161,7 +161,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--campaign", type=Path, required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--provider", required=True, help="Slug exato do endpoint OpenRouter.")
+    parser.add_argument("--provider", required=True, help="Exact OpenRouter endpoint slug, e.g. deepinfra/bf16.")
     parser.add_argument("--max-parallel", type=int, default=5)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--output-dir", type=Path)

@@ -1,4 +1,4 @@
-"""Acrescenta controles, anonimiza IDs e embaralha dados e labels em conjunto."""
+"""Add controls, anonymize IDs, and shuffle data and labels together."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from src.schemas.dataset.schema import DatasetLabel, FrontBTrajectory
 from src.services.dataset.controls import (
-    parse_response as parse_response,  # noqa: PLC0414 - compatibilidade dos imports existentes
+    parse_response as parse_response,  # noqa: PLC0414 - keeps existing imports working
 )
 from src.services.dataset.controls import validate_control
 
@@ -23,7 +23,7 @@ def json_bytes(value: object) -> bytes:
 
 
 def shuffle_members(members: dict[str, bytes], seed: int) -> dict[str, bytes]:
-    """Mistura linhas e entradas do ZIP preservando IDs e conteúdo de cada caso."""
+    """Shuffle rows and ZIP entries while preserving each case's IDs and content."""
     lines = [line for line in members["front-b-input.jsonl"].splitlines() if line.strip()]
     random.Random(seed).shuffle(lines)
     shuffled = {"front-b-input.jsonl": b"\n".join(lines) + b"\n", "front-b-inputs/": b""}
@@ -37,7 +37,7 @@ def shuffle_members(members: dict[str, bytes], seed: int) -> dict[str, bytes]:
 def randomize_release(
     members: dict[str, bytes], labels: dict, provenance: list[dict], seed: int
 ) -> tuple[dict, dict, list[dict], dict]:
-    """Substitui IDs por UUIDs aleatórios e sincroniza a ordem de todos os artefatos."""
+    """Replace IDs with random UUIDs and keep every artifact in the same order."""
     rows = [
         json.loads(line) for line in members["front-b-input.jsonl"].splitlines() if line.strip()
     ]
@@ -49,15 +49,15 @@ def randomize_release(
         or len(provenance_by_id) != len(provenance)
         or set(ids) != set(provenance_by_id)
     ):
-        raise ValueError("Dados, labels e proveniência precisam ter IDs únicos correspondentes.")
+        raise ValueError("Data, labels and provenance need matching unique IDs.")
     id_map = {tid: f"trajectory-{uuid4()}" for tid in ids}
     if len(set(id_map.values())) != len(ids):
-        raise ValueError("Colisão de identificadores aleatórios.")
+        raise ValueError("Random identifier collision.")
     renamed = {}
     for row in rows:
         old_id = row["trajectory_id"]
         if json.loads(members[f"front-b-inputs/{old_id}.json"]) != row:
-            raise ValueError("JSON individual diverge do JSONL antes da troca de IDs.")
+            raise ValueError("Individual JSON diverges from the JSONL before the ID swap.")
         row["trajectory_id"] = id_map[old_id]
         renamed[f"front-b-inputs/{row['trajectory_id']}.json"] = json_bytes(row)
     renamed["front-b-input.jsonl"] = b"".join(
@@ -80,25 +80,25 @@ def load_source(source_zip: Path, labels_path: Path) -> tuple[dict, list, dict]:
     with ZipFile(source_zip) as archive:
         members = {name: archive.read(name) for name in archive.namelist()}
     if len(members) != len(archive.namelist()):
-        raise ValueError("ZIP contém nomes duplicados.")
+        raise ValueError("ZIP contains duplicate names.")
     original_jsonl = members["front-b-input.jsonl"]
     original = [json.loads(line) for line in original_jsonl.splitlines() if line.strip()]
     ids = [row["trajectory_id"] for row in original]
     if len(set(ids)) != len(ids) or set(ids) != set(labels):
-        raise ValueError("IDs duplicados ou labels sem correspondência exata.")
+        raise ValueError("Duplicate IDs or labels without an exact match.")
     for row in original:
         FrontBTrajectory.model_validate(row)
         DatasetLabel.model_validate(labels[row["trajectory_id"]])
         if row["success"] is not False:
-            raise ValueError("Fonte deve conter apenas a versão original com falhas.")
+            raise ValueError("Source must contain only the original faulty release.")
         name = f"front-b-inputs/{row['trajectory_id']}.json"
         if json.loads(members[name]) != row:
-            raise ValueError("JSON individual diverge do JSONL.")
+            raise ValueError("Individual JSON diverges from the JSONL.")
     expected_members = {"front-b-input.jsonl", "front-b-inputs/"} | {
         f"front-b-inputs/{tid}.json" for tid in ids
     }
     if set(members) - expected_members:
-        raise ValueError("ZIP contém arquivos fora do contrato público.")
+        raise ValueError("ZIP contains files outside the public contract.")
     return members, original, labels
 
 
@@ -115,13 +115,13 @@ def select_controls(
         for line in (baseline_dataset / "front-b-input.jsonl").read_text().splitlines()
     ]
     if {r["trajectory_id"]: r for r in local_rows} != dict(zip(ids, original, strict=True)):
-        raise ValueError("Baselines locais não correspondem ao dataset de origem.")
+        raise ValueError("Local baselines do not match the source dataset.")
     provenance = [
         json.loads(line)
         for line in (baseline_dataset / "private/provenance.jsonl").read_text().splitlines()
     ]
     if {r["trajectory_id"] for r in provenance} != set(ids):
-        raise ValueError("Proveniência incompleta.")
+        raise ValueError("Incomplete provenance.")
     parents = {r["parent_trajectory_id"]: r for r in provenance}
     expected_groups = {(r["theme"], r["seniority"]) for r in provenance}
     sources = {
@@ -136,7 +136,7 @@ def select_controls(
                 parent in parents
                 or (candidate["theme"], candidate["seniority"]) not in expected_groups
             ):
-                raise ValueError("Candidato suplementar duplicado ou de cenário desconhecido.")
+                raise ValueError("Duplicate supplemental candidate or unknown scenario.")
             parents[parent] = candidate
             sources[parent] = supplemental_dir / "private/baseline-trajectories" / f"{parent}.json"
     groups = defaultdict(list)
@@ -145,7 +145,7 @@ def select_controls(
         source = sources[parent]
         data = json.loads(source.read_text())
         if data["trajectory_id"] != parent:
-            raise ValueError("ID da baseline diverge da proveniência.")
+            raise ValueError("Baseline ID diverges from the provenance.")
         try:
             validate_control(data)
         except (ValueError, KeyError, TypeError, SyntaxError) as exc:
@@ -159,7 +159,7 @@ def select_controls(
             continue
         audit = json.loads(audit_path.read_text())
         if audit.get("source_sha256") != hashlib.sha256(source.read_bytes()).hexdigest():
-            raise ValueError("Baseline mudou após a revisão de instruções.")
+            raise ValueError("Baseline changed after the instruction review.")
         if audit.get("accepted") is not True or audit.get("issues") or audit.get("audit_error"):
             rejected.append(
                 {
@@ -171,7 +171,7 @@ def select_controls(
             continue
         groups[(truth["theme"], truth["seniority"])].append((data, truth))
     if set(groups) != expected_groups or any(len(v) < per_group for v in groups.values()):
-        raise ValueError("Baselines limpas insuficientes para balancear os cenários.")
+        raise ValueError("Not enough clean baselines to balance the scenarios.")
     groups = {
         group: sorted(
             candidates,
@@ -197,9 +197,9 @@ def build(
     shuffle_seed: int = 20260907,
 ) -> dict:
     if per_group < 1:
-        raise ValueError("per_group deve ser positivo.")
+        raise ValueError("per_group must be positive.")
     if output_dir.exists():
-        raise ValueError("Use um diretório de saída novo para preservar versões anteriores.")
+        raise ValueError("Use a new output directory to preserve previous releases.")
     members, original, labels = load_source(source_zip, labels_path)
     groups, rejected, provenance = select_controls(
         baseline_dataset, original, per_group, audit_dir, supplemental_dir
@@ -264,6 +264,7 @@ def build(
         "controls_by_source": dict(
             Counter(r["generation_source"] for r in provenance if r["fault_id"] is None)
         ),
+        # Manifest notes are Portuguese release content, like the audited records.
         "limitations": [
             "Controles aprovados nas verificações operacionais e na revisão de instruções; revisão não é prova formal de ausência de todo erro.",
             "Respostas de lookup nos steps originais podem estar truncadas; validação usa messages completos privados.",

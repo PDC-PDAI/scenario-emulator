@@ -1,4 +1,4 @@
-"""Coerção de variáveis de ambiente do ``Settings``."""
+"""Coercion of ``Settings`` environment variables."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ _VERBOSE_LEVEL = 2
 
 
 def test_agno_debug_level_accepts_env_strings():
-    # O .env entrega strings; o Literal[1, 2] sozinho rejeitava "1".
+    # .env yields strings; Literal[1, 2] alone used to reject "1".
     assert Settings(AGNO_DEBUG_LEVEL="1").AGNO_DEBUG_LEVEL == 1
     assert Settings(AGNO_DEBUG_LEVEL="2").AGNO_DEBUG_LEVEL == _VERBOSE_LEVEL
     assert Settings(AGNO_DEBUG_LEVEL=2).AGNO_DEBUG_LEVEL == _VERBOSE_LEVEL

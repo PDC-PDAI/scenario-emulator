@@ -483,7 +483,7 @@ async def test_runner_expands_cached_baselines_without_calling_scenario_service(
 
     class ForbiddenScenarioService:
         async def run(self, brief: str, **kwargs) -> ScenarioRun:
-            raise AssertionError("A expansão offline não pode chamar o gerador de cenários.")
+            raise AssertionError("Offline expansion must not call the scenario generator.")
 
     expanded_campaign = base_campaign.model_copy(
         update={

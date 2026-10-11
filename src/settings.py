@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "qwen3:8b"
     OLLAMA_ENABLE_THINKING: bool = True
 
-    # Debug verboso do Agno é opt-in: pode incluir prompts e argumentos de tools.
+    # Verbose Agno debugging is opt-in: it can include prompts and tool arguments.
     AGNO_DEBUG: bool = False
     AGNO_DEBUG_LEVEL: Literal[1, 2] = 1
 
@@ -49,8 +49,8 @@ class Settings(BaseSettings):
     @field_validator("AGNO_DEBUG_LEVEL", mode="before")
     @classmethod
     def coerce_agno_debug_level(cls, value: object) -> object:
-        # O Literal[1, 2] não coage a string vinda do .env ("1" != 1); sem isto,
-        # o próprio .env.example derruba o boot com ValidationError.
+        # Literal[1, 2] does not coerce the string read from .env ("1" != 1); without
+        # this, .env.example itself would break startup with a ValidationError.
         if isinstance(value, str) and value.strip().isdigit():
             return int(value.strip())
         return value
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     @classmethod
     def reject_latest_label(cls, value: str) -> str:
         if value.strip().lower() == "latest":
-            raise ValueError("Use um label estável (dev/production), nunca 'latest'.")
+            raise ValueError("Use a stable label (dev/production), never 'latest'.")
         return value.strip()
 
     @property

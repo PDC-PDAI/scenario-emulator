@@ -23,7 +23,7 @@ def build_model() -> Any:
         if not api_key and settings.OPENAI_BASE_URL == config.base_url:
             api_key = settings.OPENAI_API_KEY
         if not api_key:
-            raise ValueError("Configure OPENROUTER_API_KEY para executar a campanha fixa.")
+            raise ValueError("Set OPENROUTER_API_KEY to run the fixed campaign.")
         return OpenRouterChat(
             id=config.model,
             api_key=api_key,
@@ -79,7 +79,7 @@ def build_model() -> Any:
             host=settings.OLLAMA_BASE_URL,
             request_params=request_params,
         )
-    raise ValueError(f"Provider não suportado: {provider}")
+    raise ValueError(f"Unsupported provider: {provider}")
 
 
 def get_model_identifier(model: Any) -> str:

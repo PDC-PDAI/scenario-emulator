@@ -1,4 +1,4 @@
-"""Auditoria de instruções das baselines candidatas a controles negativos."""
+"""Instruction audit of the baselines that are candidates for negative controls."""
 
 from __future__ import annotations
 
@@ -88,6 +88,7 @@ def deterministic_issues(data: dict) -> list[str]:
     questions = json.loads(data["steps"][-1]["module_outputs"]["action"])["arguments"]["payload"][
         "questions"
     ]
+    # Commands and issue texts are Portuguese audit content, like the trajectories.
     issues = []
     match = re.search(
         r"^\s*(?:gere|gerar|crie|produza|elabore|forneça|desenvolva|formule|solicite)\s+(\d+|uma)\s+(?:pergunta|questão|questao|questões|questoes)",
@@ -132,7 +133,7 @@ async def audit(dataset: Path, output: Path, *, limit: int | None = None) -> Non
         if destination.exists():
             previous = json.loads(destination.read_text())
             if previous["source_sha256"] != digest:
-                raise ValueError("Baseline mudou desde a auditoria.")
+                raise ValueError("Baseline changed since the audit.")
             if (
                 "audit_error" not in previous
                 and previous.get("audit_prompt_sha256") == prompt_digest
@@ -178,7 +179,7 @@ async def audit(dataset: Path, output: Path, *, limit: int | None = None) -> Non
                         response.choices[0].message.content or ""
                     )
                     if verdict.actual_count != len(payload["questions"]):
-                        raise ValueError("Auditor devolveu contagem observada inconsistente.")
+                        raise ValueError("Auditor returned an inconsistent observed count.")
                     if verdict.accepted and (
                         verdict.issues
                         or (
@@ -186,7 +187,7 @@ async def audit(dataset: Path, output: Path, *, limit: int | None = None) -> Non
                             and verdict.expected_count != verdict.actual_count
                         )
                     ):
-                        raise ValueError("Auditor aprovou resultado inconsistente.")
+                        raise ValueError("Auditor approved an inconsistent result.")
                     result.update(verdict.model_dump())
                     result["auditor_model"] = model
                     result["usage"] = response.usage.model_dump() if response.usage else None

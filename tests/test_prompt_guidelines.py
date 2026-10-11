@@ -15,7 +15,7 @@ def test_pr91_guidelines_are_appended_after_command():
 
     assert command == "Foque em Python e FastAPI."
     assert guidelines == PLATFORM_DEFAULT_GUIDELINES
-    assert "senioridade" not in guidelines.lower()  # texto usa "nível da vaga"
+    assert "senioridade" not in guidelines.lower()  # the text says "nível da vaga"
     assert "SHORT_TEXT" in guidelines
     assert "weight" in guidelines
 

@@ -54,6 +54,7 @@ def constrain_tools(tools, count):
         schema = function['parameters']
         questions = schema['properties']['payload']['properties']['questions']
         questions.update(minItems=count, maxItems=count)
+        # The schema and tool descriptions are sent to the model, so they stay in Portuguese.
         questions['description'] = (
             f'OBRIGATÓRIO: lista com EXATAMENTE {count} perguntas completas. '
             f'Preencha todas as posições de 1 até {count}, inclusive a posição {count}. '
@@ -187,7 +188,7 @@ async def run(probe_case=None):  # noqa: PLR0915 - linear, audited collection li
             stable_original = {key: value for key, value in original_protocol.items()
                               if key != 'runtime_sha256'}
             if stable_current != stable_original:
-                raise ValueError('Parâmetros fixos mudaram; retomada bloqueada.')
+                raise ValueError('Fixed parameters changed; resume blocked.')
             phase['resume_protocol'] = {
                 'original_runtime_sha256': original_protocol['runtime_sha256'],
                 'pending_cases_runtime_sha256': current_protocol['runtime_sha256'],
@@ -216,7 +217,9 @@ async def run(probe_case=None):  # noqa: PLR0915 - linear, audited collection li
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--probe', choices=[f'generation-{i:03d}' for i in range(1,301)])
+    parser.add_argument('--probe', metavar='generation-NNN',
+                        choices=[f'generation-{i:03d}' for i in range(1, 301)],
+                        help='Run a single pending case (001-300) and save it only if accepted.')
     args = parser.parse_args()
     with (PRIVATE / 'collection.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -35,7 +35,7 @@ SMOKE_COUNT = 5
 def test_successful_baseline_with_recovered_tool_error_is_rejected(response):
     execution = _scenario(1, "recovered-error").executions[0]
     execution.agent_debug_trajectory.steps[0].env_response = response
-    with pytest.raises(ValueError, match="erro natural"):
+    with pytest.raises(ValueError, match="natural error"):
         validate_clean_baseline(execution)
 
 
@@ -63,7 +63,7 @@ def test_fixed_generation_uses_exact_parameters_and_local_prompts(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_REASONING_EFFORT", "high")
 
     def unexpected_remote_prompt():
-        pytest.fail("A campanha fixa não deve consultar prompts remotos.")
+        pytest.fail("The fixed campaign must not fetch remote prompts.")
 
     monkeypatch.setattr("src.prompts.manager.get_langfuse_client", unexpected_remote_prompt)
     with generation_scope(campaign.generation):
@@ -165,7 +165,7 @@ async def test_fixed_runner_keeps_failed_slots_and_resumes_without_shifting_labe
             "generation": campaign.generation.model_copy(update={"model": "qwen/qwen3.5-9b"}),
         }
     )
-    with pytest.raises(ValueError, match="Protocolo/modelo/limite"):
+    with pytest.raises(ValueError, match="Protocol/model/limit"):
         await service.run(other_model, limit=SMOKE_COUNT, output_dir=destination)
     await service.run(other_model, limit=SMOKE_COUNT, output_dir=tmp_path / "qwen")
     first_inputs = {case_id: (job, prompt) for case_id, job, prompt, _ in calls[:SMOKE_COUNT]}

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DatasetGenerationConfig(BaseModel):
-    """Parâmetros comuns do protocolo comparativo no OpenRouter."""
+    """Shared parameters for the comparative OpenRouter protocol."""
 
     model_config = ConfigDict(extra="forbid")
 

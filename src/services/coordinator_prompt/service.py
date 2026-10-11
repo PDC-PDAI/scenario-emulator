@@ -34,9 +34,9 @@ class CoordinatorPromptService:
         scenario_id: str,
     ) -> CoordinatorPromptBatch:
         if benign_count < 0 or malicious_count < 0 or benign_count + malicious_count < 1:
-            raise ValueError("Informe ao menos um comando; contagens não podem ser negativas.")
+            raise ValueError("Request at least one command; counts cannot be negative.")
         if benign_count + malicious_count > _MAX_PROMPTS_PER_BATCH:
-            raise ValueError(f"O lote aceita no máximo {_MAX_PROMPTS_PER_BATCH} comandos.")
+            raise ValueError(f"A batch accepts at most {_MAX_PROMPTS_PER_BATCH} commands.")
 
         system = resolve_prompt("front-a/coordinator/system", COORDINATOR_PROMPT_SYSTEM_PROMPT)
         user = resolve_prompt(
@@ -107,8 +107,8 @@ class CoordinatorPromptService:
             malicious = sum(p.intent is PromptIntent.MALICIOUS for p in generated.prompts)
             if (benign, malicious) != (benign_count, malicious_count):
                 raise ValueError(
-                    "O CoordinatorPromptAgent não respeitou as contagens: "
-                    f"esperado=({benign_count}, {malicious_count}), recebido=({benign}, {malicious})."
+                    "CoordinatorPromptAgent did not honor the counts: "
+                    f"expected=({benign_count}, {malicious_count}), got=({benign}, {malicious})."
                 )
 
             prompts = [

@@ -1,4 +1,4 @@
-"""Adaptação das execuções da Frente A para o AgentDebug-RH."""
+"""Adapts Front A executions to AgentDebug-RH."""
 
 from src.services.agent_debug.service import (
     agent_debug_trajectory,

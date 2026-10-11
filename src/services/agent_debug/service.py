@@ -1,4 +1,4 @@
-"""Constrói o contrato externo sem acoplar o emulador ao código do consumidor."""
+"""Builds the external contract without coupling the emulator to the consumer code."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _evidence(execution: QuestionnaireExecution) -> str:
 
 
 def failure_annotation(execution: QuestionnaireExecution) -> FailureAnnotation | None:
-    """Classifica o desvio observado sem fingir uma análise de causa raiz por LLM."""
+    """Classify the observed deviation without pretending to be an LLM root-cause analysis."""
     if execution.failure_annotation is not None:
         return execution.failure_annotation
     if execution.benchmark_passed:
@@ -48,6 +48,7 @@ def failure_annotation(execution: QuestionnaireExecution) -> FailureAnnotation |
 
     step = _last_step(execution)
     step_index = step.index if step else 1
+    # Annotation and trajectory texts are dataset content, kept in Portuguese.
     reason = execution.failure_reason or "Resultado diferente do oráculo do cenário."
     retryable = False
 
@@ -118,7 +119,7 @@ def agent_debug_trajectory(
     job: JobDescription,
     execution: QuestionnaireExecution,
 ) -> AgentDebugTrajectory:
-    """Devolve a captura nativa ou uma representação compatível de legado."""
+    """Return the native capture or a legacy-compatible representation."""
     if execution.agent_debug_trajectory is not None:
         return execution.agent_debug_trajectory
 
@@ -169,7 +170,7 @@ def save_trajectory_files(
     trajectories: Iterable[AgentDebugTrajectory],
     output_dir: str | Path,
 ) -> list[Path]:
-    """Grava um JSON autocontido por trajetória e devolve os caminhos criados."""
+    """Write one self-contained JSON per trajectory and return the created paths."""
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
@@ -177,11 +178,11 @@ def save_trajectory_files(
     for trajectory in trajectories:
         filename = _trajectory_filename(trajectory.trajectory_id)
         if filename in filenames:
-            raise ValueError(f"IDs de trajetória geraram o mesmo nome de arquivo: {filename}")
+            raise ValueError(f"Trajectory IDs produced the same file name: {filename}")
         filenames.add(filename)
         path = directory / filename
-        # exclude_none omite `messages` nas trajetórias sem captura crua — os
-        # arquivos legados continuam idênticos (nenhum outro campo é anulável).
+        # exclude_none omits `messages` for trajectories without raw capture, so
+        # legacy files stay identical (no other field is nullable).
         path.write_text(
             trajectory.model_dump_json(indent=2, exclude_none=True) + "\n", encoding="utf-8"
         )

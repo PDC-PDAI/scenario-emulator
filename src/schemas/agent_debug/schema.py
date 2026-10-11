@@ -1,9 +1,9 @@
-"""Contrato de execução consumido pelo AgentDebug-RH.
+"""Execution contract consumed by AgentDebug-RH.
 
-``AgentDebugTrajectory`` e ``AgentDebugTrajectoryStep`` espelham o schema
-``Trajectory`` da referência em ``.references/agentdebug-rh-*``. Manter essa
-fronteira explícita evita que o consumidor precise reconstruir steps a partir
-de spans do Langfuse ou dos campos agregados do benchmark.
+``AgentDebugTrajectory`` and ``AgentDebugTrajectoryStep`` mirror the reference
+``Trajectory`` schema in ``.references/agentdebug-rh-*``. Keeping this boundary
+explicit spares the consumer from rebuilding steps out of Langfuse spans or the
+aggregated benchmark fields.
 """
 
 from __future__ import annotations
@@ -16,12 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def serialize_module_output(value: Any) -> str:
-    """Serializa um output de módulo sem produzir JSON parcial."""
+    """Serialize a module output without producing partial JSON."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
 def raw_output_envelope(planning: str, action: Any) -> str:
-    """Reúne planning e action em um envelope JSON completo e válido."""
+    """Combine planning and action into one complete, valid JSON envelope."""
     return serialize_module_output({"planning": planning, "action": action})
 
 
@@ -99,12 +99,12 @@ _VALID_ERROR_TYPES: dict[ErrorModule, frozenset[ErrorType]] = {
 
 
 def is_valid_error_pair(module: ErrorModule, error_type: ErrorType) -> bool:
-    """Informa se o par pertence à taxonomia compartilhada com o AgentDebug-RH."""
+    """Return whether the pair belongs to the taxonomy shared with AgentDebug-RH."""
     return error_type in _VALID_ERROR_TYPES[module]
 
 
 class ChatToolCall(BaseModel):
-    """Uma tool call emitida em uma mensagem ``assistant`` da conversa crua."""
+    """One tool call emitted in an ``assistant`` message of the raw conversation."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -114,7 +114,7 @@ class ChatToolCall(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    """Uma mensagem crua da conversa com o modelo (system/user/assistant/tool)."""
+    """One raw message of the model conversation (system/user/assistant/tool)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -128,17 +128,17 @@ class ChatMessage(BaseModel):
 
 
 class AgentDebugTrajectoryStep(BaseModel):
-    """Um ciclo de decisão 1-indexado da execução modular do agente.
+    """One 1-indexed decision cycle of the agent's modular execution.
 
-    Um step começa com o contexto disponível ao agente, reúne os outputs dos
-    módulos que participaram da decisão e termina com a resposta do ambiente à
-    ação escolhida. Portanto, uma tool call não cria vários steps para
-    planejamento, chamada e resultado: esses eventos pertencem ao mesmo step.
+    A step starts with the context available to the agent, gathers the outputs of
+    the modules that took part in the decision, and ends with the environment's
+    response to the chosen action. A tool call therefore does not create separate
+    steps for planning, call and result: those events belong to the same step.
 
-    ``raw_output`` preserva a saída observável completa da qual
-    ``module_outputs`` foi extraído. Quando o SDK entrega planning e tool call
-    em eventos separados, o produtor serializa ambos em um único envelope para
-    auditoria, sem inventar memory ou reflection.
+    ``raw_output`` preserves the complete observable output from which
+    ``module_outputs`` was extracted. When the SDK delivers planning and the tool
+    call as separate events, the producer serializes both into a single envelope
+    for auditing, without inventing memory or reflection.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -151,11 +151,10 @@ class AgentDebugTrajectoryStep(BaseModel):
 
 
 class AgentDebugTrajectory(BaseModel):
-    """Execução autocontida, pronta para ``Trajectory.model_validate``.
+    """Self-contained execution, ready for ``Trajectory.model_validate``.
 
-    Os módulos analisáveis são identificados pelas chaves não vazias de
-    ``module_outputs`` em cada step. Os nomes dessas chaves pertencem à
-    taxonomia compartilhada com o AgentDebug-RH.
+    Analyzable modules are identified by the non-empty ``module_outputs`` keys of
+    each step. Those key names belong to the taxonomy shared with AgentDebug-RH.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -165,11 +164,11 @@ class AgentDebugTrajectory(BaseModel):
     environment: str
     success: bool = False
     steps: list[AgentDebugTrajectoryStep] = Field(default_factory=list)
-    # Conversa do run na ordem exata enviada ao modelo, em contrato NORMALIZADO
-    # (ver `clean_agent_messages`: ordem/papéis/conteúdo/tool_call_ids verbatim;
-    # argumentos parseados e metadados internos do provider removidos). O
-    # AgentDebug-RH ignora o campo; a Frente C usa como prefixo do re-rollout.
-    # None = execução legada/adaptada sem captura nativa.
+    # The run's conversation in the exact order sent to the model, in the NORMALIZED
+    # contract (see `clean_agent_messages`: order/roles/content/tool_call_ids verbatim;
+    # arguments parsed and internal provider metadata removed). AgentDebug-RH
+    # ignores the field; Front C uses it as the re-rollout prefix.
+    # None = legacy/adapted execution without native capture.
     messages: list[ChatMessage] | None = None
 
     @model_validator(mode="after")
@@ -177,12 +176,12 @@ class AgentDebugTrajectory(BaseModel):
         indices = [step.index for step in self.steps]
         expected = list(range(1, len(self.steps) + 1))
         if indices != expected:
-            raise ValueError(f"steps devem ser contíguos e 1-indexados; recebido {indices}")
+            raise ValueError(f"steps must be contiguous and 1-indexed; got {indices}")
         return self
 
 
 class FailureCode(str, Enum):
-    """Códigos determinísticos observados pelo oráculo do emulador."""
+    """Deterministic codes observed by the emulator oracle."""
 
     SECURITY_POLICY_VIOLATION = "SECURITY_POLICY_VIOLATION"
     OVER_REFUSAL = "OVER_REFUSAL"
@@ -199,7 +198,7 @@ class FailureCode(str, Enum):
 
 
 class FailureAnnotation(BaseModel):
-    """Rótulo observado; não substitui o diagnóstico do AgentDebug-RH."""
+    """Observed label; it does not replace the AgentDebug-RH diagnosis."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -215,6 +214,6 @@ class FailureAnnotation(BaseModel):
     def validate_taxonomy_pair(self) -> FailureAnnotation:
         if not is_valid_error_pair(self.module, self.error_type):
             raise ValueError(
-                f"error_type={self.error_type.value} não pertence ao módulo {self.module.value}"
+                f"error_type={self.error_type.value} does not belong to module {self.module.value}"
             )
         return self

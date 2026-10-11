@@ -84,7 +84,7 @@ class ScenarioService:
         self.coordinator_service = coordinator_service or CoordinatorPromptService()
         self.questionnaire_service = questionnaire_service or QuestionnaireService()
 
-    async def run(  # noqa: PLR0915 - fluxo linear preserva as etapas auditáveis
+    async def run(  # noqa: PLR0915 - a linear flow preserves the auditable stages
         self,
         brief: str,
         *,
@@ -115,7 +115,7 @@ class ScenarioService:
         current_stage = "scenario"
         current_locus = NodeLocus.SYSTEM
         logger.info(
-            "[PIPELINE] Iniciando geração do cenário",
+            "[PIPELINE] Starting scenario generation",
             **_progress_fields(
                 scenario_id=scenario_id,
                 stage=current_stage,
@@ -161,7 +161,7 @@ class ScenarioService:
                     current_locus = NodeLocus.JOB
                     stage_started = time.perf_counter()
                     logger.info(
-                        "[JOB_DESCRIPTION] Gerando descrição da vaga",
+                        "[JOB_DESCRIPTION] Generating job description",
                         **_progress_fields(
                             scenario_id=scenario_id,
                             stage=current_stage,
@@ -171,7 +171,7 @@ class ScenarioService:
                     )
                     job = await self.job_service.generate(brief, scenario_id=scenario_id)
                     logger.info(
-                        "[JOB_DESCRIPTION] Descrição da vaga gerada",
+                        "[JOB_DESCRIPTION] Job description generated",
                         **_progress_fields(
                             scenario_id=scenario_id,
                             stage=current_stage,
@@ -186,7 +186,7 @@ class ScenarioService:
                     current_locus = NodeLocus.COORDINATOR
                     stage_started = time.perf_counter()
                     logger.info(
-                        "[COORDINATOR_PROMPTS] Gerando prompts do coordenador",
+                        "[COORDINATOR_PROMPTS] Generating coordinator prompts",
                         **_progress_fields(
                             scenario_id=scenario_id,
                             stage=current_stage,
@@ -203,7 +203,7 @@ class ScenarioService:
                         scenario_id=scenario_id,
                     )
                     logger.info(
-                        "[COORDINATOR_PROMPTS] Prompts do coordenador gerados",
+                        "[COORDINATOR_PROMPTS] Coordinator prompts generated",
                         **_progress_fields(
                             scenario_id=scenario_id,
                             stage=current_stage,
@@ -229,7 +229,7 @@ class ScenarioService:
                             "expected_action": prompt.expected_action.value,
                         }
                         logger.info(
-                            f"[QUESTIONNAIRE] Gerando questionário {index}/{total_questionnaires}",
+                            f"[QUESTIONNAIRE] Generating questionnaire {index}/{total_questionnaires}",
                             **_progress_fields(
                                 scenario_id=scenario_id,
                                 stage=current_stage,
@@ -255,7 +255,7 @@ class ScenarioService:
                         logger.info(
                             (
                                 "[QUESTIONNAIRE] "
-                                f"Questionário {index}/{total_questionnaires} concluído"
+                                f"Questionnaire {index}/{total_questionnaires} completed"
                             ),
                             **_progress_fields(
                                 scenario_id=scenario_id,
@@ -306,7 +306,7 @@ class ScenarioService:
                         }
                     )
                     logger.info(
-                        "[PIPELINE] Geração do cenário concluída",
+                        "[PIPELINE] Scenario generation completed",
                         **_progress_fields(
                             scenario_id=scenario_id,
                             stage="scenario",
@@ -322,7 +322,7 @@ class ScenarioService:
                 except Exception:
                     stage_tag = _STAGE_TAGS[current_stage]
                     logger.exception(
-                        f"[{stage_tag}] Falha durante a etapa {current_stage}",
+                        f"[{stage_tag}] Failure during stage {current_stage}",
                         **_progress_fields(
                             scenario_id=scenario_id,
                             stage=current_stage,

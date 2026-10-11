@@ -41,25 +41,25 @@ class FixedScenarioInputs(BaseModel):
     def validate_prompts(self) -> FixedScenarioInputs:
         ids = [prompt.id for prompt in self.prompts]
         if len(ids) != len(set(ids)):
-            raise ValueError("IDs dos comandos devem ser únicos.")
+            raise ValueError("Command IDs must be unique.")
         for sequence, prompt in enumerate(self.prompts, start=1):
             if prompt.job_description_id != self.job.id or prompt.sequence != sequence:
-                raise ValueError("Comando não corresponde à vaga ou à sequência fixa.")
+                raise ValueError("Command does not match the job opening or the fixed sequence.")
             if prompt.intent is not PromptIntent.BENIGN:
-                raise ValueError("O corpus de baselines deve conter somente comandos benignos.")
+                raise ValueError("The baseline corpus must contain only benign commands.")
         return self
 
 
 def load_fixed_inputs(campaign: DatasetCampaignProfile) -> list[FixedScenarioInputs]:
     if campaign.fixed_inputs is None:
-        raise ValueError("A campanha não tem fixed_inputs.")
+        raise ValueError("The campaign has no fixed_inputs.")
     payload = json.loads(campaign.fixed_inputs.read_text(encoding="utf-8"))
     inputs = [FixedScenarioInputs.model_validate(item) for item in payload]
     if [item.scenario_id for item in inputs] != [spec.id for spec in campaign.scenarios]:
-        raise ValueError("Cenários do corpus divergem da campanha.")
+        raise ValueError("Corpus scenarios diverge from the campaign.")
     for item, spec in zip(inputs, campaign.scenarios, strict=True):
         if len(item.prompts) != spec.executions:
-            raise ValueError(f"Quantidade de comandos divergente: {spec.id}.")
+            raise ValueError(f"Command count mismatch: {spec.id}.")
     return inputs
 
 
@@ -83,9 +83,9 @@ def _protocol(campaign: DatasetCampaignProfile) -> dict[str, object]:
 
 
 def validate_clean_baseline(execution: QuestionnaireExecution, *, control: bool = False) -> None:
-    """Não deixe uma falha natural recuperada preceder o rótulo sintético."""
+    """Never let a recovered natural failure precede the synthetic label."""
     if not execution.benchmark_passed or execution.agent_debug_trajectory is None:
-        raise ValueError(execution.failure_reason or "baseline não passou no oráculo")
+        raise ValueError(execution.failure_reason or "baseline did not pass the oracle")
     for step in execution.agent_debug_trajectory.steps:
         response = step.env_response
         while response is not None:
@@ -99,7 +99,7 @@ def validate_clean_baseline(execution: QuestionnaireExecution, *, control: bool 
                         break
             if isinstance(response, dict):
                 if response.get("error") or response.get("ok") is False:
-                    raise ValueError(f"Baseline contém erro natural no step {step.index}.")
+                    raise ValueError(f"Baseline contains a natural error at step {step.index}.")
                 response = response.get("result")
             else:
                 break
@@ -117,10 +117,10 @@ async def run_fixed_dataset(
     output_dir: Path | None,
 ) -> DatasetRunSummary:
     if limit is not None and limit < 1:
-        raise ValueError("limit deve ser maior que zero.")
+        raise ValueError("limit must be greater than zero.")
     parallelism = max_parallel if max_parallel is not None else campaign.max_parallel
     if not 1 <= parallelism <= _MAX_PARALLEL:
-        raise ValueError("max_parallel deve estar entre 1 e 10.")
+        raise ValueError("max_parallel must be between 1 and 10.")
     inputs = load_fixed_inputs(campaign)
     experiment, faults = service._experiment(campaign)
     planned = min(limit, campaign.planned_executions) if limit else campaign.planned_executions
@@ -164,13 +164,13 @@ async def run_fixed_dataset(
                     )
                 _atomic_write(cache, execution.model_dump_json(indent=2) + "\n")
             if execution.coordinator_prompt != prompt:
-                raise ValueError("Checkpoint contém outro comando.")
+                raise ValueError("Checkpoint contains a different command.")
             trajectory = agent_debug_trajectory(job, execution)
             validate_clean_baseline(execution, control=assignment[case_id] is None)
             _terminal_step(trajectory)
             error_path.unlink(missing_ok=True)
             return position, _Baseline(trajectory, f"fixed-{spec.id}", spec)
-        except Exception as exc:  # noqa: BLE001 - manter o slot pendente, sem trocar o comando
+        except Exception as exc:  # noqa: BLE001 - keep the slot pending without replacing the command
             errors[case_id] = [f"{type(exc).__name__}: {exc}"]
             _atomic_write(error_path, json.dumps(errors[case_id], ensure_ascii=False) + "\n")
             return position, None

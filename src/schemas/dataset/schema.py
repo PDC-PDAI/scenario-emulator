@@ -17,7 +17,7 @@ from src.schemas.agent_debug.schema import (
 
 
 class DatasetCampaignScenario(BaseModel):
-    """Um briefing e a quantidade de trajetórias que ele deve produzir."""
+    """One brief and the number of trajectories it must produce."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -29,7 +29,7 @@ class DatasetCampaignScenario(BaseModel):
 
 
 class DatasetCampaignProfile(BaseModel):
-    """Configuração versionada de uma coleta Frente A → Frente B."""
+    """Versioned configuration of a Front A → Front B collection."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -54,9 +54,9 @@ class DatasetCampaignProfile(BaseModel):
     def validate_campaign(self) -> DatasetCampaignProfile:
         scenario_ids = [scenario.id for scenario in self.scenarios]
         if len(scenario_ids) != len(set(scenario_ids)):
-            raise ValueError("Os ids dos cenários da campanha devem ser únicos.")
+            raise ValueError("Campaign scenario IDs must be unique.")
         if len(self.fault_ids) != len(set(self.fault_ids)):
-            raise ValueError("fault_ids não pode conter valores repetidos.")
+            raise ValueError("fault_ids cannot contain repeated values.")
         for field_name in (
             "experiment_profile",
             "output_dir",
@@ -67,23 +67,23 @@ class DatasetCampaignProfile(BaseModel):
             if path is None:
                 continue
             if path.is_absolute() or ".." in path.parts:
-                raise ValueError(f"{field_name} deve ser relativo ao diretório do repositório.")
+                raise ValueError(f"{field_name} must be relative to the repository directory.")
         if self.baseline_source_dir == self.output_dir:
-            raise ValueError("baseline_source_dir deve ser diferente de output_dir.")
+            raise ValueError("baseline_source_dir must differ from output_dir.")
         if self.fixed_inputs is not None:
             if self.generation is None or self.fault_seed is None:
-                raise ValueError("fixed_inputs exige generation e fault_seed explícitos.")
+                raise ValueError("fixed_inputs requires explicit generation and fault_seed.")
             if self.baseline_source_dir is not None or self.augmentations_per_baseline != 1:
-                raise ValueError("Entradas fixas exigem uma baseline própria por caso e modelo.")
+                raise ValueError("Fixed inputs require a dedicated baseline per case and model.")
         elif self.generation is not None:
-            raise ValueError("generation exige fixed_inputs para preservar os comandos.")
+            raise ValueError("generation requires fixed_inputs to preserve the commands.")
         if self.success_controls and (
             self.fixed_inputs is None or self.success_controls >= self.planned_executions
         ):
-            raise ValueError("Controles exigem entradas fixas e quantidade menor que o total.")
+            raise ValueError("Controls require fixed inputs and a count below the total.")
         if self.augmentations_per_baseline > len(self.fault_ids):
             raise ValueError(
-                "augmentations_per_baseline não pode exceder a quantidade de fault_ids."
+                "augmentations_per_baseline cannot exceed the number of fault_ids."
             )
         return self
 
@@ -137,7 +137,7 @@ class DatasetCampaignProfile(BaseModel):
 
 
 class FrontBTrajectory(BaseModel):
-    """Contrato exato observado em ``front-b-input.json``."""
+    """Exact contract observed in ``front-b-input.json``."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -153,7 +153,7 @@ class FrontBTrajectory(BaseModel):
 
 
 class DatasetGroundTruth(BaseModel):
-    """Rótulo separado da entrada para não vazar o diagnóstico à Frente B."""
+    """Label kept apart from the input so the diagnosis never leaks to Front B."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -177,14 +177,14 @@ class DatasetGroundTruth(BaseModel):
             self.critical_failure_type,
         )
         if self.fault_id is None and any(value is not None for value in fields):
-            raise ValueError("Controle correto não pode conter rótulo de falha.")
+            raise ValueError("A clean control cannot carry a fault label.")
         if self.fault_id is not None and any(value is None for value in fields):
-            raise ValueError("Falha injetada exige rótulo completo.")
+            raise ValueError("An injected fault requires a complete label.")
         return self
 
 
 class DatasetLabel(BaseModel):
-    """Oráculo mínimo comparável ao ``critical_error`` produzido pela Frente B."""
+    """Minimal oracle comparable to the ``critical_error`` produced by Front B."""
 
     model_config = ConfigDict(extra="forbid")
 
